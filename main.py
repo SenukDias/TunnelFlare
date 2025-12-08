@@ -95,39 +95,75 @@ def generate_pixel_animation(width=60, height=10):
         grid.add_row(Align.center(row_text))
     return grid
 
-def generate_topology_animation(frame_count):
+def generate_vertical_topology_animation(frame_count, tunnel_id, local_service):
     """
-    Generates an ASCII network topology animation.
+    Generates a vertical ASCII network topology animation with icons.
     """
-    # Components
-    user = "[bold cyan]USER[/]"
-    internet = "[bold white]INTERNET[/]"
-    cloudflare = f"[bold {CLOUDFLARE_ORANGE}]CLOUDFLARE[/]"
-    tunnel = "[bold green]TUNNEL[/]"
-    localhost = "[bold yellow]LOCALHOST[/]"
+    # Animation frame logic
+    # Total cycle: 4 frames for movement
+    pos = frame_count % 4
     
-    # Animation frames for packets (dots moving)
-    # Length of segments: 10 chars
-    # Total cycle: 40 frames
-    
-    pos = frame_count % 40
-    
-    def get_line(start, length):
-        line = ["-"] * length
-        if start <= pos < start + length:
-            line[pos - start] = "●" # Packet
-        return "".join(line)
+    def get_arrow():
+        if pos == 0: return "  ↓  "
+        if pos == 1: return "  .  "
+        if pos == 2: return "  .  "
+        return "  .  "
 
-    line1 = get_line(0, 10)
-    line2 = get_line(10, 10)
-    line3 = get_line(20, 10)
-    line4 = get_line(30, 10)
+    def get_arrow_2():
+        if pos == 1: return "  ↓  "
+        if pos == 2: return "  .  "
+        if pos == 3: return "  .  "
+        return "  .  "
+        
+    def get_arrow_3():
+        if pos == 2: return "  ↓  "
+        if pos == 3: return "  .  "
+        if pos == 0: return "  .  "
+        return "  .  "
+        
+    def get_arrow_4():
+        if pos == 3: return "  ↓  "
+        if pos == 0: return "  .  "
+        if pos == 1: return "  .  "
+        return "  .  "
+
+    # Nodes
+    user_node = Panel(Align.center(Text("👤 Client\n(Browser)", style="bold cyan")), border_style="cyan", width=30)
+    internet_node = Panel(Align.center(Text("🌐 Internet\n(Public Web)", style="bold white")), border_style="white", width=30)
+    cloudflare_node = Panel(Align.center(Text("☁️  Cloudflare Edge\n(Global Network)", style=f"bold {CLOUDFLARE_ORANGE}")), border_style=CLOUDFLARE_ORANGE, width=30)
+    tunnel_node = Panel(Align.center(Text(f"🚇 Tunnel\nID: {tunnel_id[:8]}...", style="bold green")), border_style="green", width=30)
+    localhost_node = Panel(Align.center(Text(f"🏠 Localhost\n{local_service}", style="bold yellow")), border_style="yellow", width=30)
     
-    topology = f"""
-    {user}  {line1}>  {internet}  {line2}>  {cloudflare}  {line3}>  {tunnel}  {line4}>  {localhost}
-    """
+    # Arrows (using simple text for now, could be improved)
+    arrow_style = f"bold {CLOUDFLARE_ORANGE}"
     
-    return Align.center(Text.from_markup(topology))
+    # Layout using a Table to stack vertically
+    grid = Table.grid(expand=True, padding=0)
+    grid.add_column(justify="center")
+    
+    grid.add_row(user_node)
+    grid.add_row(Text("  │  ", style=arrow_style))
+    grid.add_row(Text(get_arrow(), style=arrow_style))
+    grid.add_row(Text("  ↓  ", style=arrow_style))
+    
+    grid.add_row(internet_node)
+    grid.add_row(Text("  │  ", style=arrow_style))
+    grid.add_row(Text(get_arrow_2(), style=arrow_style))
+    grid.add_row(Text("  ↓  ", style=arrow_style))
+    
+    grid.add_row(cloudflare_node)
+    grid.add_row(Text("  │  ", style=arrow_style))
+    grid.add_row(Text(get_arrow_3(), style=arrow_style))
+    grid.add_row(Text("  ↓  ", style=arrow_style))
+    
+    grid.add_row(tunnel_node)
+    grid.add_row(Text("  │  ", style=arrow_style))
+    grid.add_row(Text(get_arrow_4(), style=arrow_style))
+    grid.add_row(Text("  ↓  ", style=arrow_style))
+    
+    grid.add_row(localhost_node)
+    
+    return Align.center(grid)
 
 def get_resource_table():
     """
@@ -154,6 +190,27 @@ def get_resource_table():
         return table
     except Exception as e:
         return Text(f"Error reading config: {e}", style="red")
+
+def get_config_details():
+    """Reads config.yml and returns tunnel_id and local_service."""
+    config_file = Path("config.yml")
+    tunnel_id = "Unknown"
+    local_service = "Unknown"
+    
+    if config_file.exists():
+        try:
+            with open(config_file, "r") as f:
+                config = yaml.safe_load(f)
+                tunnel_id = config.get("tunnel", "Unknown")
+                # Try to find the first non-404 service
+                if "ingress" in config:
+                    for rule in config["ingress"]:
+                        if rule.get("service") != "http_status:404":
+                            local_service = rule.get("service", "Unknown")
+                            break
+        except:
+            pass
+    return tunnel_id, local_service
 
 def start_tunnel_background(tunnel_name: str):
     """
@@ -334,6 +391,40 @@ def setup():
         start_tunnel_background(tunnel_name)
 
 @app.command()
+def start():
+    """
+    Start the tunnel using the existing configuration.
+    """
+    refresh_interface(-1)
+    
+    if is_tunnel_running():
+        console.print("[yellow]Tunnel is already running.[/yellow]")
+        return
+
+    config_file = Path("config.yml")
+    if not config_file.exists():
+        console.print("[red]No configuration file found. Please run 'setup' first.[/red]")
+        return
+
+    try:
+        with open(config_file, "r") as f:
+            config = yaml.safe_load(f)
+        
+        tunnel_id = config.get("tunnel")
+        if not tunnel_id:
+            console.print("[red]Invalid configuration: Tunnel ID missing.[/red]")
+            return
+            
+        # We can run by ID or Name. Since we stored ID in config, let's try running by ID.
+        # cloudflared tunnel run <UUID> works.
+        
+        console.print(f"[green]Found configuration for Tunnel ID: {tunnel_id}[/green]")
+        start_tunnel_background(tunnel_id)
+        
+    except Exception as e:
+        console.print(f"[red]Failed to start tunnel: {e}[/red]")
+
+@app.command()
 def status():
     """
     Show live status, network topology, and resources of the running tunnel.
@@ -345,10 +436,22 @@ def status():
 
     console.clear()
     
+    # Get details for topology
+    tunnel_id, local_service = get_config_details()
+    
     layout = Layout()
-    layout.split(
+    # Split: Left (Topology), Right (Resources + Logs)
+    layout.split_row(
+        Layout(name="left", ratio=1),
+        Layout(name="right", ratio=2)
+    )
+    
+    layout["left"].split(
         Layout(name="header", size=8),
-        Layout(name="topology", size=6),
+        Layout(name="topology", ratio=1)
+    )
+    
+    layout["right"].split(
         Layout(name="resources", size=10),
         Layout(name="logs", ratio=1)
     )
@@ -357,7 +460,7 @@ def status():
     
     frame_count = 0
     
-    with Live(layout, refresh_per_second=10, screen=True) as live:
+    with Live(layout, refresh_per_second=4, screen=True) as live:
         while True:
             # Check if still running
             if not is_tunnel_running():
@@ -365,7 +468,7 @@ def status():
                 break
 
             # Update Topology Animation
-            layout["topology"].update(Panel(generate_topology_animation(frame_count), title="[bold white]NETWORK TOPOLOGY[/]", border_style=CLOUDFLARE_ORANGE))
+            layout["topology"].update(Panel(generate_vertical_topology_animation(frame_count, tunnel_id, local_service), title="[bold white]NETWORK TOPOLOGY[/]", border_style=CLOUDFLARE_ORANGE))
             
             # Update Resources
             layout["resources"].update(Panel(get_resource_table(), title="[bold white]ACTIVE RESOURCES[/]", border_style="blue"))
@@ -376,14 +479,14 @@ def status():
                     # Simple tail implementation
                     with open(LOG_FILE, "r") as f:
                         lines = f.readlines()
-                        last_lines = "".join(lines[-10:])
+                        last_lines = "".join(lines[-15:]) # Show more lines since we have vertical space
                         current_status = Text(f"Tunnel PID: {pid}\n\n{last_lines}", style="green")
                         layout["logs"].update(Panel(current_status, title="Tunnel Logs", border_style="green"))
                 except Exception:
                     pass
             
             frame_count += 1
-            time.sleep(0.1)
+            time.sleep(0.25)
 
 @app.command()
 def stop():
