@@ -97,9 +97,16 @@ class TopologyWidget(Static):
     local_ip = "Loading..."
     tunnel_id = "Unknown"
     
+    # Diagnostics
+    internet_status = "checking" # checking, ok, error
+    tunnel_status = "checking"
+    local_status = "checking"
+    
     def on_mount(self) -> None:
         self.fetch_ips()
+        self.check_health()
         self.set_interval(1, self.refresh_topology)
+        self.set_interval(10, self.check_health) # Re-check health every 10s
 
     @work(thread=True)
     def fetch_ips(self):
@@ -127,86 +134,149 @@ class TopologyWidget(Static):
             except:
                 pass
 
+    @work(thread=True)
+    def check_health(self):
+        # 1. Internet Check
+        try:
+            requests.get("https://1.1.1.1", timeout=2)
+            self.internet_status = "ok"
+        except:
+            self.internet_status = "error"
+            
+        # 2. Tunnel Check (Process)
+        if PID_FILE.exists():
+            try:
+                with open(PID_FILE, "r") as f:
+                    pid = int(f.read().strip())
+                os.kill(pid, 0)
+                self.tunnel_status = "ok"
+            except:
+                self.tunnel_status = "error"
+        else:
+            self.tunnel_status = "stopped"
+            
+        # 3. Local Service Check (First one in config)
+        self.local_status = "ok" # Default to OK if no service to check
+        if CONFIG_FILE.exists():
+            try:
+                with open(CONFIG_FILE, "r") as f:
+                    config = yaml.safe_load(f)
+                if "ingress" in config:
+                    for rule in config["ingress"]:
+                        service = rule.get("service", "")
+                        if service.startswith("http"):
+                            try:
+                                requests.get(service, timeout=1)
+                                self.local_status = "ok"
+                                break
+                            except:
+                                self.local_status = "error"
+            except:
+                pass
+
     def refresh_topology(self):
         self.update(self.generate_topology())
 
     def generate_topology(self):
-        # High Quality Block Art Icons
+        # Colors based on status
+        color_internet = "green" if self.internet_status == "ok" else "red"
+        color_tunnel = "green" if self.tunnel_status == "ok" else "red"
+        if self.tunnel_status == "stopped": color_tunnel = "yellow"
+        color_local = "green" if self.local_status == "ok" else "red"
         
+        # Icons (Unicode Art)
+        
+        # Client (Laptop)
         icon_client = Text.from_markup(f"""[cyan]
-   ▄████▄   
-  ▐█▀  ▀█▌  
-  ▐█    █▌  
-  ▐█▄  ▄█▌  
-   ▀████▀   
-   CLIENT   [/cyan]""")
+ ┌─────────┐ 
+ │  USER   │ 
+ │         │ 
+ └─────────┘ 
+  /_______/  [/cyan]""")
 
-        icon_internet = Text.from_markup(f"""[white]
-    ▄▄▄▄    
-  ▄█▀  ▀█▄  
-  █  {self.public_ip.center(4)}  █  
-  ▀█▄  ▄█▀  
-    ▀▀▀▀    
-  INTERNET  [/white]""")
+        # Internet (Globe)
+        icon_internet = Text.from_markup(f"""[{color_internet}]
+   .---.   
+  /     \  
+ |  WWW  | 
+  \     /  
+   '---'   [/]""")
 
+        # Cloudflare (Cloud)
         icon_cloudflare = Text.from_markup(f"""[bold {CLOUDFLARE_ORANGE}]
-     ▄▄▄     
-   ▄█▀▀█▄   
-  ▐█    █▌  
-   ▀█▄▄█▀   
-            
- CLOUDFLARE [/bold {CLOUDFLARE_ORANGE}]""")
+    .--.    
+ .-(    ).  
+(___  ___)  
+    ''      
+ CLOUDFLARE [/]""")
 
-        icon_tunnel = Text.from_markup(f"""[green]
-   ▄████▄   
-  ▐█    █▌  
-  ▐█    █▌  
-  ▐█    █▌  
-   ▀████▀   
-   TUNNEL   [/green]""")
+        # Tunnel (Pipe/Gate)
+        icon_tunnel = Text.from_markup(f"""[{color_tunnel}]
+  _______  
+ /       \ 
+|  TUNNEL |
+|         |
+ \_______/ [/]""")
 
-        icon_local = Text.from_markup(f"""[yellow]
-     ▄█▄     
-   ▄█▀▀█▄   
-  ▐█    █▌  
-  ▐█▄▄▄▄█▌  
-            
- LOCALHOST  [/yellow]""")
+        # Localhost (Server)
+        icon_local = Text.from_markup(f"""[{color_local}]
+ ┌───────┐ 
+ │  APP  │ 
+ ├───────┤ 
+ │SERVER │ 
+ └───────┘ [/]""")
 
-        # Connectivity Animation
+        # Connectivity Lines (Continuous)
+        # Using box drawing characters: ─
+        
+        # Animation
         t = int(time.time() * 4) % 4
-        arrow = " >>>"[t:] + " >>>"[:t]
-        conn = Text(f"\n\n [bold green]{arrow}[/bold green] \n", justify="center")
+        # Create a moving arrow effect on the line
+        # Line length approx 10 chars
+        base_line = "──────────"
+        # Insert a block or arrow at position t*2
+        pos = t * 2
+        line_chars = list(base_line)
+        if pos < len(line_chars):
+            line_chars[pos] = "►"
+        animated_line = "".join(line_chars)
+        
+        conn = Text(f"\n\n[bold green]{animated_line}[/]\n", justify="center")
 
-        grid = Table.grid(expand=True, padding=1)
-        grid.add_column(justify="center")
-        grid.add_column(justify="center")
-        grid.add_column(justify="center")
-        grid.add_column(justify="center")
-        grid.add_column(justify="center")
-        grid.add_column(justify="center")
-        grid.add_column(justify="center")
-        grid.add_column(justify="center")
-        grid.add_column(justify="center")
+        grid = Table.grid(expand=True, padding=0)
+        grid.add_column(justify="center", ratio=1)
+        grid.add_column(justify="center", ratio=1)
+        grid.add_column(justify="center", ratio=1)
+        grid.add_column(justify="center", ratio=1)
+        grid.add_column(justify="center", ratio=1)
+        grid.add_column(justify="center", ratio=1)
+        grid.add_column(justify="center", ratio=1)
+        grid.add_column(justify="center", ratio=1)
+        grid.add_column(justify="center", ratio=1)
 
         grid.add_row(
             icon_client, conn, icon_internet, conn, icon_cloudflare, conn, icon_tunnel, conn, icon_local
         )
         
+        # Status Text
+        status_internet = "Connected" if self.internet_status == "ok" else "Disconnected"
+        status_tunnel = "Active" if self.tunnel_status == "ok" else ("Stopped" if self.tunnel_status == "stopped" else "Error")
+        status_local = "Reachable" if self.local_status == "ok" else "Unreachable"
+
         # Details Row
         grid.add_row(
-            Text("IP: Detected", style="dim cyan", justify="center"),
+            Text("Client", style="dim cyan", justify="center"),
             "",
-            Text(f"Public IP:\n{self.public_ip}", style="bold white", justify="center"),
+            Text(f"Public IP:\n{self.public_ip}\n[{color_internet}]{status_internet}[/]", style="white", justify="center"),
             "",
             Text("Anycast\nNetwork", style=f"dim {CLOUDFLARE_ORANGE}", justify="center"),
             "",
-            Text(f"UUID:\n{self.tunnel_id}", style="dim green", justify="center"),
+            Text(f"UUID:\n{self.tunnel_id}\n[{color_tunnel}]{status_tunnel}[/]", style="white", justify="center"),
             "",
-            Text(f"Local IP:\n{self.local_ip}", style="bold yellow", justify="center")
+            Text(f"Local IP:\n{self.local_ip}\n[{color_local}]{status_local}[/]", style="white", justify="center")
         )
 
-        return Panel(grid, title="[bold white]NETWORK TOPOLOGY[/]", border_style=CLOUDFLARE_ORANGE)
+        return Panel(grid, title="[bold white]NETWORK DIAGNOSTICS[/]", border_style=CLOUDFLARE_ORANGE)
 
 class TunnelFlareApp(App):
     """The main TUI application."""
