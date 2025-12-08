@@ -81,99 +81,130 @@ def refresh_interface(current_step_index: int):
     console.print(get_header(current_step_index))
     console.print("\n")
 
-def generate_pixel_animation(width=60, height=10):
-    """Generates a random pixelated animation frame."""
-    chars = ["█", "▓", "▒", "░", " "]
-    colors = [CLOUDFLARE_ORANGE, "orange1", "orange3", "grey30"]
-    
-    grid = Table.grid(expand=True)
-    for _ in range(height):
-        row_text = Text()
-        for _ in range(width):
-            char = random.choice(chars)
-            color = random.choice(colors)
-            row_text.append(char, style=color)
-        grid.add_row(Align.center(row_text))
-    return grid
-
-def generate_tree_topology_animation(frame_count, tunnel_id, ingress_rules):
+def generate_enhanced_topology_animation(frame_count, tunnel_id, ingress_rules):
     """
-    Generates a vertical ASCII network topology animation with a Tree for services.
+    Generates an enhanced horizontal ASCII network topology with descriptive icons and packet simulation.
     """
     # Animation frame logic
-    pos = frame_count % 4
+    # Cycle length: 6 frames for smoother movement
+    pos = frame_count % 6
     
-    def get_arrow():
-        if pos == 0: return "↓"
-        if pos == 1: return "."
-        if pos == 2: return "."
-        return "."
+    def get_connection(length=6):
+        line = ["-"] * length
+        # Packet position
+        pkt_pos = pos % length
+        line[pkt_pos] = "●" # Packet
+        # Make it green
+        return f"[bold green]{''.join(line)}[/bold green]"
 
-    def get_arrow_2():
-        if pos == 1: return "↓"
-        if pos == 2: return "."
-        if pos == 3: return "."
-        return "."
-        
-    def get_arrow_3():
-        if pos == 2: return "↓"
-        if pos == 3: return "."
-        if pos == 0: return "."
-        return "."
-        
-    # Nodes - Compacted
-    user_node = Panel(Align.center(Text("👤 Client\nIP: Detected (Dynamic)", style="bold cyan")), border_style="cyan", width=35, padding=(0, 1))
-    internet_node = Panel(Align.center(Text("🌐 Internet\nRoute: Public Web", style="bold white")), border_style="white", width=35, padding=(0, 1))
-    cloudflare_node = Panel(Align.center(Text("☁️  Cloudflare\nIP: Anycast Network", style=f"bold {CLOUDFLARE_ORANGE}")), border_style=CLOUDFLARE_ORANGE, width=35, padding=(0, 1))
+    # Descriptive Icons (Larger)
     
-    # Tunnel Node
-    tunnel_text = Text(f"🚇 Tunnel\nUUID: {tunnel_id[:8]}...\nStatus: Connected", style="bold green")
-    tunnel_node = Panel(Align.center(tunnel_text), border_style="green", width=35, padding=(0, 1))
+    # Client (Laptop/User)
+    icon_client = Text.from_markup(f"""[cyan]
+   ___   
+  /   \  
+ |  o  | 
+  \___/  
+  / | \  
+ CLIENT  [/cyan]""")
     
-    # Tree for Services
-    service_tree = Tree(f"[bold yellow]🏠 Local Network[/bold yellow]")
+    # Internet (Globe)
+    icon_internet = Text.from_markup(f"""[white]
+   .--.   
+  (    )  
+ (      ) 
+  (    )  
+   `--'   
+ INTERNET [/white]""")
     
+    # Cloudflare (Cloud)
+    icon_cloudflare = Text.from_markup(f"""[bold {CLOUDFLARE_ORANGE}]
+    _  _    
+   ( )( )   
+  (      )  
+   (____)   
+            
+ CLOUDFLARE [/bold {CLOUDFLARE_ORANGE}]""")
+    
+    # Tunnel (Pipe)
+    icon_tunnel = Text.from_markup(f"""[green]
+   ____   
+  /    \  
+ |      | 
+ |      | 
+  \____/  
+  TUNNEL  [/green]""")
+    
+    # Localhost (House/Server)
+    icon_local = Text.from_markup(f"""[yellow]
+    /\    
+   /  \   
+  |    |  
+  |____|  
+          
+ LOCALHOST[/yellow]""")
+
+    # Layout using a Table to stack horizontally
+    grid = Table.grid(expand=True, padding=2)
+    grid.add_column(justify="center") # Client
+    grid.add_column(justify="center", width=8) # Arrow
+    grid.add_column(justify="center") # Internet
+    grid.add_column(justify="center", width=8) # Arrow
+    grid.add_column(justify="center") # Cloudflare
+    grid.add_column(justify="center", width=8) # Arrow
+    grid.add_column(justify="center") # Tunnel
+    grid.add_column(justify="center", width=8) # Arrow
+    grid.add_column(justify="center") # Local
+    
+    # Connection Strings
+    conn1 = Text.from_markup(f"\n\n{get_connection(6)}\n>>>")
+    conn2 = Text.from_markup(f"\n\n{get_connection(6)}\n>>>")
+    conn3 = Text.from_markup(f"\n\n{get_connection(6)}\n>>>")
+    conn4 = Text.from_markup(f"\n\n{get_connection(6)}\n>>>")
+    
+    grid.add_row(
+        icon_client,
+        conn1,
+        icon_internet,
+        conn2,
+        icon_cloudflare,
+        conn3,
+        icon_tunnel,
+        conn4,
+        icon_local
+    )
+    
+    # Details Row (IPs and Info)
+    grid.add_row(
+        Text("IP: Detected\n(Dynamic)", style="dim cyan", justify="center"),
+        Text(""),
+        Text("Route:\nPublic Web", style="dim white", justify="center"),
+        Text(""),
+        Text("IP: Anycast\nNetwork", style=f"dim {CLOUDFLARE_ORANGE}", justify="center"),
+        Text(""),
+        Text(f"UUID:\n{tunnel_id[:8]}...", style="dim green", justify="center"),
+        Text(""),
+        Text("IP: 127.0.0.1\n(Local)", style="dim yellow", justify="center")
+    )
+    
+    # Tree for Services (Optional, displayed below)
+    service_tree = Tree(f"[bold yellow]Active Services[/bold yellow]")
     if ingress_rules:
         for rule in ingress_rules:
             hostname = rule.get("hostname", "*")
             service = rule.get("service", "N/A")
-            
-            if service == "http_status:404":
-                continue
-                
-            # Node Label
-            label = Text()
-            label.append("🔗 ", style="bold blue")
-            label.append(f"{hostname}", style="bold white")
-            label.append(f"\n   ↳ {service}", style="dim yellow")
-            
-            service_tree.add(label)
+            if service == "http_status:404": continue
+            service_tree.add(f"[blue]{hostname}[/blue] -> [yellow]{service}[/yellow]")
     else:
         service_tree.add("[dim]No active services[/dim]")
 
-    # Arrows
-    arrow_style = f"bold {CLOUDFLARE_ORANGE}"
+    # Combine Grid and Tree
+    final_layout = Table.grid(expand=True)
+    final_layout.add_row(Align.center(grid))
+    final_layout.add_row(Text("\n"))
+    final_layout.add_row(Align.center(service_tree))
     
-    # Layout using a Table to stack vertically
-    grid = Table.grid(expand=True, padding=0)
-    grid.add_column(justify="center")
-    
-    grid.add_row(user_node)
-    grid.add_row(Text(get_arrow(), style=arrow_style))
-    
-    grid.add_row(internet_node)
-    grid.add_row(Text(get_arrow_2(), style=arrow_style))
-    
-    grid.add_row(cloudflare_node)
-    grid.add_row(Text(get_arrow_3(), style=arrow_style))
-    
-    grid.add_row(tunnel_node)
-    
-    # Add the tree below the tunnel
-    grid.add_row(Text("│", style=arrow_style))
-    grid.add_row(Align.center(service_tree))
-    
-    return Align.center(grid)
+    return final_layout
 
 def get_resource_table():
     """
@@ -479,7 +510,7 @@ def status():
                 break
 
             # Update Topology Animation
-            layout["left"].update(Panel(generate_tree_topology_animation(frame_count, tunnel_id, ingress_rules), title="[bold white]NETWORK TOPOLOGY[/]", border_style=CLOUDFLARE_ORANGE))
+            layout["left"].update(Panel(generate_enhanced_topology_animation(frame_count, tunnel_id, ingress_rules), title="[bold white]NETWORK TOPOLOGY[/]", border_style=CLOUDFLARE_ORANGE))
             
             # Update Resources
             layout["resources"].update(Panel(get_resource_table(), title="[bold white]ACTIVE RESOURCES[/]", border_style="blue"))
