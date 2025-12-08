@@ -1,0 +1,25 @@
+# Configuration and Secrets
+config.yml
+*.pem
+*.json
+.env
+
+# Logs and State
+tunnel.log
+tunnel.pid
+*.log
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+env/
+dist/
+build/
+*.egg-info/
+
+# IDEs
+.vscode/
+.idea/
+.DS_Store
