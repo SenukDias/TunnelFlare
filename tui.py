@@ -241,7 +241,7 @@ class TopologyWidget(Static):
             line_chars[pos] = "►"
         animated_line = "".join(line_chars)
         
-        conn = Text(f"\n\n[bold green]{animated_line}[/]\n", justify="center")
+        conn = Text.from_markup(f"\n\n[bold green]{animated_line}[/]\n", justify="center")
 
         grid = Table.grid(expand=True, padding=0)
         grid.add_column(justify="center", ratio=1)
@@ -267,13 +267,13 @@ class TopologyWidget(Static):
         grid.add_row(
             Text("Client", style="dim cyan", justify="center"),
             "",
-            Text(f"Public IP:\n{self.public_ip}\n[{color_internet}]{status_internet}[/]", style="white", justify="center"),
+            Text.from_markup(f"Public IP:\n{self.public_ip}\n[{color_internet}]{status_internet}[/]", style="white", justify="center"),
             "",
             Text("Anycast\nNetwork", style=f"dim {CLOUDFLARE_ORANGE}", justify="center"),
             "",
-            Text(f"UUID:\n{self.tunnel_id}\n[{color_tunnel}]{status_tunnel}[/]", style="white", justify="center"),
+            Text.from_markup(f"UUID:\n{self.tunnel_id}\n[{color_tunnel}]{status_tunnel}[/]", style="white", justify="center"),
             "",
-            Text(f"Local IP:\n{self.local_ip}\n[{color_local}]{status_local}[/]", style="white", justify="center")
+            Text.from_markup(f"Local IP:\n{self.local_ip}\n[{color_local}]{status_local}[/]", style="white", justify="center")
         )
 
         return Panel(grid, title="[bold white]NETWORK DIAGNOSTICS[/]", border_style=CLOUDFLARE_ORANGE)
