@@ -1,6 +1,6 @@
 # TunnelFlare
 
-![TunnelFlare Banner](file:///home/ronin/.gemini/antigravity/brain/c05251d5-efba-4a4f-83e0-4baf2b613802/tunnelflare_banner_1765202478326.png)
+![TunnelFlare Banner](resources/banner.png)
 
 <div align="center">
 
@@ -34,7 +34,7 @@
 ## 📸 Screenshots
 
 ### Interactive Dashboard
-![Dashboard Mockup](file:///home/ronin/.gemini/antigravity/brain/c05251d5-efba-4a4f-83e0-4baf2b613802/tunnelflare_dashboard_mockup_1765202603080.png)
+![Dashboard Mockup](resources/dashboard.png)
 
 ## 📦 Installation
 
