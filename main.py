@@ -15,6 +15,7 @@ from rich.live import Live
 from rich.text import Text
 from rich.align import Align
 from rich.table import Table
+from rich.tree import Tree
 from pathlib import Path
 import yaml
 
@@ -95,46 +96,62 @@ def generate_pixel_animation(width=60, height=10):
         grid.add_row(Align.center(row_text))
     return grid
 
-def generate_vertical_topology_animation(frame_count, tunnel_id, local_service):
+def generate_tree_topology_animation(frame_count, tunnel_id, ingress_rules):
     """
-    Generates a vertical ASCII network topology animation with icons.
+    Generates a vertical ASCII network topology animation with a Tree for services.
     """
     # Animation frame logic
-    # Total cycle: 4 frames for movement
     pos = frame_count % 4
     
     def get_arrow():
-        if pos == 0: return "  ↓  "
-        if pos == 1: return "  .  "
-        if pos == 2: return "  .  "
-        return "  .  "
+        if pos == 0: return "↓"
+        if pos == 1: return "."
+        if pos == 2: return "."
+        return "."
 
     def get_arrow_2():
-        if pos == 1: return "  ↓  "
-        if pos == 2: return "  .  "
-        if pos == 3: return "  .  "
-        return "  .  "
+        if pos == 1: return "↓"
+        if pos == 2: return "."
+        if pos == 3: return "."
+        return "."
         
     def get_arrow_3():
-        if pos == 2: return "  ↓  "
-        if pos == 3: return "  .  "
-        if pos == 0: return "  .  "
-        return "  .  "
+        if pos == 2: return "↓"
+        if pos == 3: return "."
+        if pos == 0: return "."
+        return "."
         
-    def get_arrow_4():
-        if pos == 3: return "  ↓  "
-        if pos == 0: return "  .  "
-        if pos == 1: return "  .  "
-        return "  .  "
-
-    # Nodes
-    user_node = Panel(Align.center(Text("👤 Client\n(Browser)", style="bold cyan")), border_style="cyan", width=30)
-    internet_node = Panel(Align.center(Text("🌐 Internet\n(Public Web)", style="bold white")), border_style="white", width=30)
-    cloudflare_node = Panel(Align.center(Text("☁️  Cloudflare Edge\n(Global Network)", style=f"bold {CLOUDFLARE_ORANGE}")), border_style=CLOUDFLARE_ORANGE, width=30)
-    tunnel_node = Panel(Align.center(Text(f"🚇 Tunnel\nID: {tunnel_id[:8]}...", style="bold green")), border_style="green", width=30)
-    localhost_node = Panel(Align.center(Text(f"🏠 Localhost\n{local_service}", style="bold yellow")), border_style="yellow", width=30)
+    # Nodes - Compacted
+    user_node = Panel(Align.center(Text("👤 Client\nIP: Detected (Dynamic)", style="bold cyan")), border_style="cyan", width=35, padding=(0, 1))
+    internet_node = Panel(Align.center(Text("🌐 Internet\nRoute: Public Web", style="bold white")), border_style="white", width=35, padding=(0, 1))
+    cloudflare_node = Panel(Align.center(Text("☁️  Cloudflare\nIP: Anycast Network", style=f"bold {CLOUDFLARE_ORANGE}")), border_style=CLOUDFLARE_ORANGE, width=35, padding=(0, 1))
     
-    # Arrows (using simple text for now, could be improved)
+    # Tunnel Node
+    tunnel_text = Text(f"🚇 Tunnel\nUUID: {tunnel_id[:8]}...\nStatus: Connected", style="bold green")
+    tunnel_node = Panel(Align.center(tunnel_text), border_style="green", width=35, padding=(0, 1))
+    
+    # Tree for Services
+    service_tree = Tree(f"[bold yellow]🏠 Local Network[/bold yellow]")
+    
+    if ingress_rules:
+        for rule in ingress_rules:
+            hostname = rule.get("hostname", "*")
+            service = rule.get("service", "N/A")
+            
+            if service == "http_status:404":
+                continue
+                
+            # Node Label
+            label = Text()
+            label.append("🔗 ", style="bold blue")
+            label.append(f"{hostname}", style="bold white")
+            label.append(f"\n   ↳ {service}", style="dim yellow")
+            
+            service_tree.add(label)
+    else:
+        service_tree.add("[dim]No active services[/dim]")
+
+    # Arrows
     arrow_style = f"bold {CLOUDFLARE_ORANGE}"
     
     # Layout using a Table to stack vertically
@@ -142,26 +159,19 @@ def generate_vertical_topology_animation(frame_count, tunnel_id, local_service):
     grid.add_column(justify="center")
     
     grid.add_row(user_node)
-    grid.add_row(Text("  │  ", style=arrow_style))
     grid.add_row(Text(get_arrow(), style=arrow_style))
-    grid.add_row(Text("  ↓  ", style=arrow_style))
     
     grid.add_row(internet_node)
-    grid.add_row(Text("  │  ", style=arrow_style))
     grid.add_row(Text(get_arrow_2(), style=arrow_style))
-    grid.add_row(Text("  ↓  ", style=arrow_style))
     
     grid.add_row(cloudflare_node)
-    grid.add_row(Text("  │  ", style=arrow_style))
     grid.add_row(Text(get_arrow_3(), style=arrow_style))
-    grid.add_row(Text("  ↓  ", style=arrow_style))
     
     grid.add_row(tunnel_node)
-    grid.add_row(Text("  │  ", style=arrow_style))
-    grid.add_row(Text(get_arrow_4(), style=arrow_style))
-    grid.add_row(Text("  ↓  ", style=arrow_style))
     
-    grid.add_row(localhost_node)
+    # Add the tree below the tunnel
+    grid.add_row(Text("│", style=arrow_style))
+    grid.add_row(Align.center(service_tree))
     
     return Align.center(grid)
 
@@ -192,25 +202,20 @@ def get_resource_table():
         return Text(f"Error reading config: {e}", style="red")
 
 def get_config_details():
-    """Reads config.yml and returns tunnel_id and local_service."""
+    """Reads config.yml and returns tunnel_id and all ingress rules."""
     config_file = Path("config.yml")
     tunnel_id = "Unknown"
-    local_service = "Unknown"
+    ingress_rules = []
     
     if config_file.exists():
         try:
             with open(config_file, "r") as f:
                 config = yaml.safe_load(f)
                 tunnel_id = config.get("tunnel", "Unknown")
-                # Try to find the first non-404 service
-                if "ingress" in config:
-                    for rule in config["ingress"]:
-                        if rule.get("service") != "http_status:404":
-                            local_service = rule.get("service", "Unknown")
-                            break
+                ingress_rules = config.get("ingress", [])
         except:
             pass
-    return tunnel_id, local_service
+    return tunnel_id, ingress_rules
 
 def start_tunnel_background(tunnel_name: str):
     """
@@ -437,26 +442,32 @@ def status():
     console.clear()
     
     # Get details for topology
-    tunnel_id, local_service = get_config_details()
+    tunnel_id, ingress_rules = get_config_details()
     
     layout = Layout()
-    # Split: Left (Topology), Right (Resources + Logs)
-    layout.split_row(
-        Layout(name="left", ratio=1),
-        Layout(name="right", ratio=2)
-    )
     
-    layout["left"].split(
+    # New Layout Strategy:
+    # Top: Header (Logo) - Fixed size
+    # Bottom: Body
+    #   Body Left: Topology (Wider)
+    #   Body Right: Resources (Top, Larger) + Logs (Bottom, Smaller)
+    
+    layout.split(
         Layout(name="header", size=8),
-        Layout(name="topology", ratio=1)
-    )
-    
-    layout["right"].split(
-        Layout(name="resources", size=10),
-        Layout(name="logs", ratio=1)
+        Layout(name="body")
     )
     
     layout["header"].update(Align.center(Text.from_markup(TUNNEL_FLARE_LOGO)))
+    
+    layout["body"].split_row(
+        Layout(name="left", ratio=3), # Wider Topology
+        Layout(name="right", ratio=2)
+    )
+    
+    layout["right"].split(
+        Layout(name="resources", ratio=2), # Larger Resources
+        Layout(name="logs", ratio=1) # Smaller Logs
+    )
     
     frame_count = 0
     
@@ -468,7 +479,7 @@ def status():
                 break
 
             # Update Topology Animation
-            layout["topology"].update(Panel(generate_vertical_topology_animation(frame_count, tunnel_id, local_service), title="[bold white]NETWORK TOPOLOGY[/]", border_style=CLOUDFLARE_ORANGE))
+            layout["left"].update(Panel(generate_tree_topology_animation(frame_count, tunnel_id, ingress_rules), title="[bold white]NETWORK TOPOLOGY[/]", border_style=CLOUDFLARE_ORANGE))
             
             # Update Resources
             layout["resources"].update(Panel(get_resource_table(), title="[bold white]ACTIVE RESOURCES[/]", border_style="blue"))
@@ -479,7 +490,7 @@ def status():
                     # Simple tail implementation
                     with open(LOG_FILE, "r") as f:
                         lines = f.readlines()
-                        last_lines = "".join(lines[-15:]) # Show more lines since we have vertical space
+                        last_lines = "".join(lines[-8:]) # Reduced log lines
                         current_status = Text(f"Tunnel PID: {pid}\n\n{last_lines}", style="green")
                         layout["logs"].update(Panel(current_status, title="Tunnel Logs", border_style="green"))
                 except Exception:
