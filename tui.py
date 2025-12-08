@@ -34,47 +34,49 @@ class AddDNSScreen(ModalScreen):
     }
     
     #dialog {
-        grid-size: 2;
-        grid-gutter: 1 2;
-        grid-rows: 1fr 3;
-        padding: 0 1;
+        padding: 1 2;
         width: 60;
-        height: 11;
+        height: auto;
         border: thick $background 80%;
         background: $surface;
     }
     
     #title {
-        column-span: 2;
-        height: 1;
         content-align: center middle;
         text-style: bold;
-    }
-    
-    Label {
-        column-span: 2;
+        margin-bottom: 1;
     }
     
     Input {
-        column-span: 2;
+        margin-bottom: 1;
+    }
+    
+    .buttons {
+        width: 100%;
+        height: auto;
+        align: center bottom;
+        margin-top: 1;
     }
     
     Button {
-        width: 100%;
+        margin: 0 1;
     }
     """
 
     BINDINGS = [("escape", "cancel", "Cancel")]
 
     def compose(self) -> ComposeResult:
-        yield Container(
+        yield Vertical(
             Label("Add New DNS Record", id="title"),
             Label("Hostname (e.g., app.example.com):"),
             Input(placeholder="app.example.com", id="hostname"),
             Label("Local Service (e.g., http://localhost:8000):"),
             Input(placeholder="http://localhost:8000", id="service"),
-            Button("Add", variant="primary", id="add"),
-            Button("Cancel", variant="error", id="cancel"),
+            Horizontal(
+                Button("Add", variant="primary", id="add"),
+                Button("Cancel", variant="error", id="cancel"),
+                classes="buttons"
+            ),
             id="dialog"
         )
 
@@ -101,12 +103,13 @@ class TopologyWidget(Static):
     internet_status = "checking" # checking, ok, error
     tunnel_status = "checking"
     local_status = "checking"
+    log_status = "ok" # ok, warning, error
     
     def on_mount(self) -> None:
         self.fetch_ips()
         self.check_health()
-        self.set_interval(1, self.refresh_topology)
-        self.set_interval(10, self.check_health) # Re-check health every 10s
+        self.set_interval(0.2, self.refresh_topology) # Faster refresh for smooth animation
+        self.set_interval(5, self.check_health) # Re-check health every 5s
 
     @work(thread=True)
     def fetch_ips(self):
@@ -133,6 +136,27 @@ class TopologyWidget(Static):
                     self.tunnel_id = config.get("tunnel", "Unknown")[:8] + "..."
             except:
                 pass
+
+    def check_log_errors(self):
+        """Scan the last 20 lines of the log file for errors."""
+        if not LOG_FILE.exists(): return "ok"
+        try:
+            with open(LOG_FILE, "r") as f:
+                # Read last 2000 bytes approx
+                f.seek(0, 2)
+                size = f.tell()
+                f.seek(max(0, size - 2000))
+                lines = f.readlines()[-20:] # Last 20 lines
+                
+                for line in lines:
+                    line_lower = line.lower()
+                    if "err" in line_lower or "error" in line_lower or "failed" in line_lower or "terminated" in line_lower:
+                        return "error"
+                    if "warn" in line_lower or "retrying" in line_lower:
+                        return "warning"
+        except:
+            pass
+        return "ok"
 
     @work(thread=True)
     def check_health(self):
@@ -173,6 +197,9 @@ class TopologyWidget(Static):
                                 self.local_status = "error"
             except:
                 pass
+        
+        # 4. Log Check
+        self.log_status = self.check_log_errors()
 
     def refresh_topology(self):
         self.update(self.generate_topology())
@@ -182,66 +209,97 @@ class TopologyWidget(Static):
         color_internet = "green" if self.internet_status == "ok" else "red"
         color_tunnel = "green" if self.tunnel_status == "ok" else "red"
         if self.tunnel_status == "stopped": color_tunnel = "yellow"
-        color_local = "green" if self.local_status == "ok" else "red"
         
-        # Icons (Unicode Art)
+        # Local status depends on Tunnel status too now
+        if self.tunnel_status != "ok":
+             # If tunnel is down, local is effectively isolated from the outside
+             color_local = "yellow" 
+             status_local_text = "Isolated"
+        else:
+             color_local = "green" if self.local_status == "ok" else "red"
+             status_local_text = "Reachable" if self.local_status == "ok" else "Unreachable"
+
+        # Log Status Effect
+        if self.log_status == "error":
+            color_tunnel = "red" # Override tunnel color on error
+        elif self.log_status == "warning":
+            color_tunnel = "yellow"
+
+        # Retro Icons (Unicode Art)
         
-        # Client (Laptop)
+        # Client (Retro PC)
         icon_client = Text.from_markup(f"""[cyan]
- ┌─────────┐ 
- │  USER   │ 
- │         │ 
- └─────────┘ 
-  /_______/  [/cyan]""")
+ ╔══════╗ 
+ ║ >_   ║ 
+ ╚╦════╦╝ 
+  ╚════╝  
+  CLIENT  [/cyan]""")
 
-        # Internet (Globe)
+        # Internet (Retro Browser Window)
         icon_internet = Text.from_markup(f"""[{color_internet}]
-   .---.   
-  /     \  
- |  WWW  | 
-  \     /  
-   '---'   [/]""")
+ ╔══════╗ 
+ ║ WWW  ║ 
+ ║      ║ 
+ ╚══════╝ 
+ INTERNET [/]""")
 
-        # Cloudflare (Cloud)
+        # Cloudflare (Retro Cloud)
         icon_cloudflare = Text.from_markup(f"""[bold {CLOUDFLARE_ORANGE}]
-    .--.    
- .-(    ).  
-(___  ___)  
-    ''      
- CLOUDFLARE [/]""")
+   _  _   
+ (  )( )  
+(______ ) 
+          
+CLOUDFLARE[/]""")
 
-        # Tunnel (Pipe/Gate)
+        # Tunnel (Retro Pipe/Gate)
         icon_tunnel = Text.from_markup(f"""[{color_tunnel}]
-  _______  
- /       \ 
-|  TUNNEL |
-|         |
- \_______/ [/]""")
+ ╔══════╗ 
+ ║TUNNEL║ 
+ ║>>>>>>║ 
+ ╚══════╝ 
+  TUNNEL  [/]""")
 
-        # Localhost (Server)
+        # Localhost (Retro Server Rack)
         icon_local = Text.from_markup(f"""[{color_local}]
- ┌───────┐ 
- │  APP  │ 
- ├───────┤ 
- │SERVER │ 
- └───────┘ [/]""")
+ ╔══════╗ 
+ ║[||||]║ 
+ ║[||||]║ 
+ ╚══════╝ 
+  SERVER  [/]""")
 
-        # Connectivity Lines (Continuous)
-        # Using box drawing characters: ─
+        # Connectivity Animation (Modern Retro Packet Flow)
+        # Pattern: · · ● · · ● · ·
+        t = int(time.time() * 10) # Fast ticker
+        width = 10
         
-        # Animation
-        t = int(time.time() * 4) % 4
-        # Create a moving arrow effect on the line
-        # Line length approx 10 chars
-        base_line = "──────────"
-        # Insert a block or arrow at position t*2
-        pos = t * 2
-        line_chars = list(base_line)
-        if pos < len(line_chars):
-            line_chars[pos] = "►"
-        animated_line = "".join(line_chars)
+        def get_flow_line(active=True, warning=False):
+            if not active:
+                return Text("──────────", style="dim white")
+            
+            chars = []
+            for i in range(width):
+                # Create a moving wave/packet effect
+                if (i - t) % 4 == 0:
+                    chars.append("●") # Packet
+                else:
+                    chars.append("·") # Trail
+            
+            line_str = "".join(chars)
+            style = "bold red blink" if warning else "bold green"
+            return Text.from_markup(f"\n\n[{style}]{line_str}[/]\n", justify="center")
+
+        # Determine if flow is active based on health
+        flow_internet = self.internet_status == "ok"
+        flow_tunnel = self.tunnel_status == "ok"
+        flow_local = self.local_status == "ok" and self.tunnel_status == "ok" # Local flow depends on tunnel
         
-        conn = Text.from_markup(f"\n\n[bold green]{animated_line}[/]\n", justify="center")
+        # Warning state for lines
+        warn_tunnel = self.log_status == "error"
+
+        conn_1 = get_flow_line(flow_internet)
+        conn_2 = get_flow_line(flow_internet and flow_tunnel, warning=warn_tunnel) 
+        conn_3 = get_flow_line(flow_tunnel, warning=warn_tunnel)
+        conn_4 = get_flow_line(flow_local)
 
         grid = Table.grid(expand=True, padding=0)
         grid.add_column(justify="center", ratio=1)
@@ -255,13 +313,18 @@ class TopologyWidget(Static):
         grid.add_column(justify="center", ratio=1)
 
         grid.add_row(
-            icon_client, conn, icon_internet, conn, icon_cloudflare, conn, icon_tunnel, conn, icon_local
+            icon_client, conn_1, icon_internet, conn_2, icon_cloudflare, conn_3, icon_tunnel, conn_4, icon_local
         )
         
         # Status Text
         status_internet = "Connected" if self.internet_status == "ok" else "Disconnected"
         status_tunnel = "Active" if self.tunnel_status == "ok" else ("Stopped" if self.tunnel_status == "stopped" else "Error")
-        status_local = "Reachable" if self.local_status == "ok" else "Unreachable"
+        
+        # Append Log Status
+        if self.log_status == "error":
+            status_tunnel += " (Errors)"
+        elif self.log_status == "warning":
+            status_tunnel += " (Unstable)"
 
         # Details Row
         grid.add_row(
@@ -273,7 +336,7 @@ class TopologyWidget(Static):
             "",
             Text.from_markup(f"UUID:\n{self.tunnel_id}\n[{color_tunnel}]{status_tunnel}[/]", style="white", justify="center"),
             "",
-            Text.from_markup(f"Local IP:\n{self.local_ip}\n[{color_local}]{status_local}[/]", style="white", justify="center")
+            Text.from_markup(f"Local IP:\n{self.local_ip}\n[{color_local}]{status_local_text}[/]", style="white", justify="center")
         )
 
         return Panel(grid, title="[bold white]NETWORK DIAGNOSTICS[/]", border_style=CLOUDFLARE_ORANGE)
@@ -332,6 +395,7 @@ class TunnelFlareApp(App):
         ("q", "quit", "Quit"),
         ("a", "add_dns", "Add DNS"),
         ("s", "toggle_tunnel", "Start/Stop Tunnel"),
+        ("r", "restart_tunnel", "Restart Tunnel"),
     ]
 
     def compose(self) -> ComposeResult:
@@ -344,7 +408,8 @@ class TunnelFlareApp(App):
             with Horizontal(id="controls"):
                 yield Button("Add DNS", id="btn_add", variant="primary")
                 yield Button("Remove Selected", id="btn_remove", variant="error")
-                yield Button("Start/Stop Tunnel", id="btn_toggle", variant="warning")
+                yield Button("Start/Stop", id="btn_toggle", variant="warning")
+                yield Button("Restart", id="btn_restart", variant="default")
         
         with Container(id="logs"):
             yield Label("[bold white]TUNNEL LOGS[/]")
@@ -427,6 +492,8 @@ class TunnelFlareApp(App):
             self.remove_selected_dns()
         elif event.button.id == "btn_toggle":
             self.toggle_tunnel()
+        elif event.button.id == "btn_restart":
+            self.restart_tunnel()
 
     def add_dns_record(self, hostname, service):
         if not CONFIG_FILE.exists(): return
@@ -495,8 +562,23 @@ class TunnelFlareApp(App):
         if is_running:
             # Stop
             try:
-                os.kill(pid, signal.SIGTERM)
+                # Use SIGINT for graceful shutdown (better for Cloudflare)
+                os.kill(pid, signal.SIGINT)
+                # Wait for process to die
+                for _ in range(10): # Wait up to 5 seconds
+                    try:
+                        os.kill(pid, 0)
+                        time.sleep(0.5)
+                    except OSError:
+                        break # Process died
+                
                 if PID_FILE.exists(): PID_FILE.unlink()
+                
+                # Force immediate status update
+                self.query_one(TopologyWidget).tunnel_status = "stopped"
+                self.query_one(TopologyWidget).refresh_topology()
+                self.check_tunnel_status() # Update button
+                
                 self.notify("Tunnel Stopped")
             except Exception as e:
                 self.notify(f"Failed to stop: {e}", severity="error")
@@ -527,18 +609,41 @@ class TunnelFlareApp(App):
             
             with open(PID_FILE, "w") as f:
                 f.write(str(process.pid))
-                
+            
+            # Force immediate status update
+            self.query_one(TopologyWidget).tunnel_status = "ok"
+            self.query_one(TopologyWidget).refresh_topology()
+            self.check_tunnel_status() # Update button
+            
             self.notify(f"Tunnel Started (PID: {process.pid})")
             
         except Exception as e:
             self.notify(f"Failed to start: {e}", severity="error")
 
+    def action_restart_tunnel(self):
+        self.restart_tunnel()
+
     def restart_tunnel(self):
-        # Simple restart if running
+        self.notify("Restarting Tunnel...")
+        # Stop if running
         if PID_FILE.exists():
-            self.toggle_tunnel() # Stop
-            time.sleep(1)
-            self.toggle_tunnel() # Start
+            try:
+                with open(PID_FILE, "r") as f:
+                    pid = int(f.read().strip())
+                os.kill(pid, signal.SIGINT) # Graceful
+                # Wait for process to die
+                for _ in range(10):
+                    try:
+                        os.kill(pid, 0)
+                        time.sleep(0.5)
+                    except OSError:
+                        break
+                if PID_FILE.exists(): PID_FILE.unlink()
+            except:
+                pass
+        
+        # Start
+        self.start_tunnel()
 
 if __name__ == "__main__":
     app = TunnelFlareApp()

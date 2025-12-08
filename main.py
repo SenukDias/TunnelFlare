@@ -132,7 +132,7 @@ def main(ctx: typer.Context):
     TunnelFlare: Secure Highway to your Private Server.
     """
     if ctx.invoked_subcommand is None:
-        console.print(Align.center(Text.from_markup(TUNNEL_FLARE_LOGO_COMPACT)))
+        console.print(Align.center(Text.from_markup(TUNNEL_FLARE_LOGO)))
         console.print(Align.center(Text("By. Senuk Dias", style=f"bold {CLOUDFLARE_ORANGE}")))
         console.print("\n")
         console.print(ctx.get_help())
@@ -153,10 +153,10 @@ def setup():
             if install_cloudflared():
                 console.print("[green]cloudflared installed successfully![/green]")
             else:
-                console.print("[red]Failed to install cloudflared. Please install it manually.[/red]")
+                console.print("[red]Failed to install cloudflared. Please try installing it manually (e.g., 'sudo apt install cloudflared').[/red]")
                 raise typer.Exit(code=1)
         else:
-            console.print("[yellow]Please install cloudflared to continue.[/yellow]")
+            console.print("[yellow]Cloudflared is required to continue. Please install it and run setup again.[/yellow]")
             raise typer.Exit(code=1)
     else:
         console.print("[green]cloudflared is already installed.[/green]")
@@ -176,7 +176,7 @@ def setup():
                     run_command(["cloudflared", "tunnel", "login"], check=True)
                 console.print("[green]Login successful![/green]")
             except Exception:
-                console.print("[red]Login failed or was cancelled.[/red]")
+                console.print("[red]Login failed or was cancelled. Please check your internet connection and try again.[/red]")
                 raise typer.Exit(code=1)
     else:
         console.print(f"[green]Already logged in.[/green] (Found {cert_path})")
@@ -215,6 +215,7 @@ def setup():
         
     except Exception as e:
         console.print(f"[red]Error creating tunnel: {e}[/red]")
+        console.print("[yellow]Tip: Ensure you are logged in and have permissions to create tunnels.[/yellow]")
         raise typer.Exit(code=1)
 
     time.sleep(1)
@@ -222,14 +223,20 @@ def setup():
 
     # 4. Route DNS
     refresh_interface(step_index)
-    domain = Prompt.ask("Enter the hostname you want to assign (e.g., app.example.com)")
     
-    try:
-        with console.status(f"[bold green]Routing {domain} to tunnel...[/bold green]"):
-            run_command(["cloudflared", "tunnel", "route", "dns", tunnel_id, domain], check=True)
-        console.print(f"[green]Successfully routed {domain} to tunnel![/green]")
-    except Exception as e:
-        console.print(f"[red]Failed to route DNS: {e}[/red]")
+    domain = ""
+    if Confirm.ask("Do you want to route a DNS hostname now?", default=True):
+        domain = Prompt.ask("Enter the hostname you want to assign (e.g., app.example.com)")
+        try:
+            with console.status(f"[bold green]Routing {domain} to tunnel...[/bold green]"):
+                run_command(["cloudflared", "tunnel", "route", "dns", tunnel_id, domain], check=True)
+            console.print(f"[green]Successfully routed {domain} to tunnel![/green]")
+        except Exception as e:
+            console.print(f"[red]Failed to route DNS: {e}[/red]")
+            console.print("[yellow]You can try routing it manually later using 'cloudflared tunnel route dns <UUID> <HOSTNAME>'.[/yellow]")
+    else:
+        domain = Prompt.ask("Enter the hostname you PLAN to use (for config generation)", default="app.example.com")
+        console.print("[yellow]Skipping DNS routing. You will need to add a CNAME record manually.[/yellow]")
 
     time.sleep(1)
     step_index += 1
@@ -273,19 +280,14 @@ def setup():
     if Confirm.ask("Do you want to run the tunnel now?"):
         start_tunnel_background(tunnel_name)
 
-@app.command()
-def start():
-    """
-    Start the tunnel using the existing configuration.
-    """
-    refresh_interface(-1)
-    
+def _start():
     if is_tunnel_running():
-        console.print("[yellow]Tunnel is already running.[/yellow]")
+        console.print("[yellow]Tunnel is already running. Use 'tunnelflare stop' to stop it first.[/yellow]")
         return
 
     if not CONFIG_FILE.exists():
-        console.print(f"[red]No configuration file found at {CONFIG_FILE}. Please run 'setup' first.[/red]")
+        console.print(f"[red]No configuration file found at {CONFIG_FILE}.[/red]")
+        console.print("[yellow]Please run 'tunnelflare setup' to create a new tunnel configuration.[/yellow]")
         return
 
     try:
@@ -295,16 +297,23 @@ def start():
         tunnel_id = config.get("tunnel")
         if not tunnel_id:
             console.print("[red]Invalid configuration: Tunnel ID missing.[/red]")
+            console.print("[yellow]Your configuration file seems corrupted. Please run 'tunnelflare setup' to reconfigure.[/yellow]")
             return
             
-        # We can run by ID or Name. Since we stored ID in config, let's try running by ID.
-        # cloudflared tunnel run <UUID> works.
-        
         console.print(f"[green]Found configuration for Tunnel ID: {tunnel_id}[/green]")
         start_tunnel_background(tunnel_id)
         
     except Exception as e:
         console.print(f"[red]Failed to start tunnel: {e}[/red]")
+        console.print("[yellow]Check the logs for more details.[/yellow]")
+
+@app.command()
+def start():
+    """
+    Start the tunnel using the existing configuration.
+    """
+    refresh_interface(-1)
+    _start()
 
 @app.command()
 def status():
@@ -320,14 +329,10 @@ def status():
     except Exception as e:
         console.print(f"[red]Error launching dashboard: {e}[/red]")
 
-@app.command()
-def stop():
-    """
-    Stop the background tunnel process.
-    """
+def _stop():
     pid = is_tunnel_running()
     if not pid:
-        console.print("[red]Tunnel is not running.[/red]")
+        console.print("[red]Tunnel is not running. No process to stop.[/red]")
         return
     
     try:
@@ -337,6 +342,25 @@ def stop():
             PID_FILE.unlink()
     except Exception as e:
         console.print(f"[red]Failed to stop tunnel: {e}[/red]")
+
+@app.command()
+def stop():
+    """
+    Stop the background tunnel process.
+    """
+    refresh_interface(-1)
+    _stop()
+
+@app.command()
+def restart():
+    """
+    Restart the tunnel process.
+    """
+    refresh_interface(-1)
+    console.print("[bold cyan]Restarting TunnelFlare...[/bold cyan]")
+    _stop()
+    time.sleep(2)
+    _start()
 
 @app.command()
 def install():
