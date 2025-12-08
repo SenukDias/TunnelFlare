@@ -1,0 +1,6 @@
+tunnel: e01283eb-62c0-4d16-b35b-d4e87ba97391
+credentials-file: /home/ronin/.cloudflared/e01283eb-62c0-4d16-b35b-d4e87ba97391.json
+ingress:
+- hostname: proxy.senukdias.tech
+  service: https://localhost:9443
+- service: http_status:404
