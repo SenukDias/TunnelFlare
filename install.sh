@@ -17,14 +17,35 @@ echo -e "${ORANGE}Installing TunnelFlare...${NC}"
 
 # 1. Create Installation Directory
 if [ -d "$INSTALL_DIR" ]; then
-    echo -e "${ORANGE}Removing existing installation at $INSTALL_DIR...${NC}"
+    echo -e "${ORANGE}Updating existing installation at $INSTALL_DIR...${NC}"
+    # Preserve config and state
+    if [ -f "$INSTALL_DIR/config.yml" ]; then
+        cp "$INSTALL_DIR/config.yml" /tmp/tunnelflare_config_backup.yml
+    fi
+    if [ -f "$INSTALL_DIR/tunnel.pid" ]; then
+        cp "$INSTALL_DIR/tunnel.pid" /tmp/tunnelflare_pid_backup
+    fi
+    
+    # Remove code files but keep venv if possible? 
+    # Actually, safer to wipe and restore config to ensure clean code update.
     rm -rf "$INSTALL_DIR"
 fi
 mkdir -p "$INSTALL_DIR"
 
+# Restore backups after copy (will be done after step 2)
+
 # 2. Copy Files
 echo -e "Copying files..."
 cp -r "$REPO_DIR"/* "$INSTALL_DIR/"
+
+# Restore config and state
+if [ -f /tmp/tunnelflare_config_backup.yml ]; then
+    echo -e "Restoring configuration..."
+    mv /tmp/tunnelflare_config_backup.yml "$INSTALL_DIR/config.yml"
+fi
+if [ -f /tmp/tunnelflare_pid_backup ]; then
+    mv /tmp/tunnelflare_pid_backup "$INSTALL_DIR/tunnel.pid"
+fi
 
 # 3. Create Virtual Environment
 echo -e "Creating virtual environment..."

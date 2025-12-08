@@ -2,3 +2,5 @@ typer
 rich
 shellingham
 PyYAML
+textual
+requests

@@ -34,6 +34,14 @@ TUNNEL_FLARE_LOGO = """
  [bold #F38020]   ╚═╝    ╚═════╝ ╚═╝  ╚═══╝╚═╝  ╚═══╝╚══════╝╚══════╝╚═╝     ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝[/]
 """
 
+# Compact Logo for smaller screens or just cleaner look
+TUNNEL_FLARE_LOGO_COMPACT = """
+ [bold #F38020]████████╗██╗   ██╗███╗   ██╗███╗   ██╗███████╗██╗     ███████╗██╗      █████╗ ██████╗ ███████╗[/]
+ [bold #F38020]╚══██╔══╝██║   ██║████╗  ██║████╗  ██║██╔════╝██║     ██╔════╝██║     ██╔══██╗██╔══██╗██╔════╝[/]
+ [bold #F38020]   ██║   ╚██████╔╝██║ ╚████║██║ ╚████║███████╗███████╗██║     ███████╗██║  ██║██║  ██║███████╗[/]
+ [bold #F38020]   ╚═╝    ╚═════╝ ╚═╝  ╚═══╝╚═╝  ╚═══╝╚══════╝╚══════╝╚═╝     ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝[/]
+"""
+
 STEPS = [
     "Check Dependencies",
     "Authentication",
@@ -46,13 +54,14 @@ STEPS = [
 TUNNEL_DIR = Path.home() / ".tunnelflare"
 PID_FILE = TUNNEL_DIR / "tunnel.pid"
 LOG_FILE = TUNNEL_DIR / "tunnel.log"
+CONFIG_FILE = TUNNEL_DIR / "config.yml"
 
 def get_header(current_step_index: int = -1):
     """
     Returns a renderable group containing the Logo and the Step Progress.
     """
     # Logo
-    logo_panel = Align.center(Text.from_markup(TUNNEL_FLARE_LOGO))
+    logo_panel = Align.center(Text.from_markup(TUNNEL_FLARE_LOGO_COMPACT))
     
     # Steps
     steps_text = Text()
@@ -80,142 +89,6 @@ def refresh_interface(current_step_index: int):
     console.clear()
     console.print(get_header(current_step_index))
     console.print("\n")
-
-def generate_pixel_animation(width=60, height=10):
-    """Generates a random pixelated animation frame."""
-    chars = ["█", "▓", "▒", "░", " "]
-    colors = [CLOUDFLARE_ORANGE, "orange1", "orange3", "grey30"]
-    
-    grid = Table.grid(expand=True)
-    for _ in range(height):
-        row_text = Text()
-        for _ in range(width):
-            char = random.choice(chars)
-            color = random.choice(colors)
-            row_text.append(char, style=color)
-        grid.add_row(Align.center(row_text))
-    return grid
-
-def generate_tree_topology_animation(frame_count, tunnel_id, ingress_rules):
-    """
-    Generates a vertical ASCII network topology animation with a Tree for services.
-    """
-    # Animation frame logic
-    pos = frame_count % 4
-    
-    def get_arrow():
-        if pos == 0: return "↓"
-        if pos == 1: return "."
-        if pos == 2: return "."
-        return "."
-
-    def get_arrow_2():
-        if pos == 1: return "↓"
-        if pos == 2: return "."
-        if pos == 3: return "."
-        return "."
-        
-    def get_arrow_3():
-        if pos == 2: return "↓"
-        if pos == 3: return "."
-        if pos == 0: return "."
-        return "."
-        
-    # Nodes - Compacted
-    user_node = Panel(Align.center(Text("👤 Client\nIP: Detected (Dynamic)", style="bold cyan")), border_style="cyan", width=35, padding=(0, 1))
-    internet_node = Panel(Align.center(Text("🌐 Internet\nRoute: Public Web", style="bold white")), border_style="white", width=35, padding=(0, 1))
-    cloudflare_node = Panel(Align.center(Text("☁️  Cloudflare\nIP: Anycast Network", style=f"bold {CLOUDFLARE_ORANGE}")), border_style=CLOUDFLARE_ORANGE, width=35, padding=(0, 1))
-    
-    # Tunnel Node
-    tunnel_text = Text(f"🚇 Tunnel\nUUID: {tunnel_id[:8]}...\nStatus: Connected", style="bold green")
-    tunnel_node = Panel(Align.center(tunnel_text), border_style="green", width=35, padding=(0, 1))
-    
-    # Tree for Services
-    service_tree = Tree(f"[bold yellow]🏠 Local Network[/bold yellow]")
-    
-    if ingress_rules:
-        for rule in ingress_rules:
-            hostname = rule.get("hostname", "*")
-            service = rule.get("service", "N/A")
-            
-            if service == "http_status:404":
-                continue
-                
-            # Node Label
-            label = Text()
-            label.append("🔗 ", style="bold blue")
-            label.append(f"{hostname}", style="bold white")
-            label.append(f"\n   ↳ {service}", style="dim yellow")
-            
-            service_tree.add(label)
-    else:
-        service_tree.add("[dim]No active services[/dim]")
-
-    # Arrows
-    arrow_style = f"bold {CLOUDFLARE_ORANGE}"
-    
-    # Layout using a Table to stack vertically
-    grid = Table.grid(expand=True, padding=0)
-    grid.add_column(justify="center")
-    
-    grid.add_row(user_node)
-    grid.add_row(Text(get_arrow(), style=arrow_style))
-    
-    grid.add_row(internet_node)
-    grid.add_row(Text(get_arrow_2(), style=arrow_style))
-    
-    grid.add_row(cloudflare_node)
-    grid.add_row(Text(get_arrow_3(), style=arrow_style))
-    
-    grid.add_row(tunnel_node)
-    
-    # Add the tree below the tunnel
-    grid.add_row(Text("│", style=arrow_style))
-    grid.add_row(Align.center(service_tree))
-    
-    return Align.center(grid)
-
-def get_resource_table():
-    """
-    Reads config.yml and returns a table of resources.
-    """
-    config_file = Path("config.yml")
-    if not config_file.exists():
-        return Text("No config.yml found.", style="red")
-    
-    try:
-        with open(config_file, "r") as f:
-            config = yaml.safe_load(f)
-        
-        table = Table(expand=True, border_style=CLOUDFLARE_ORANGE)
-        table.add_column("Ingress Rule (DNS)", style="cyan")
-        table.add_column("Local Service", style="yellow")
-        
-        if "ingress" in config:
-            for rule in config["ingress"]:
-                hostname = rule.get("hostname", "*")
-                service = rule.get("service", "N/A")
-                table.add_row(hostname, service)
-        
-        return table
-    except Exception as e:
-        return Text(f"Error reading config: {e}", style="red")
-
-def get_config_details():
-    """Reads config.yml and returns tunnel_id and all ingress rules."""
-    config_file = Path("config.yml")
-    tunnel_id = "Unknown"
-    ingress_rules = []
-    
-    if config_file.exists():
-        try:
-            with open(config_file, "r") as f:
-                config = yaml.safe_load(f)
-                tunnel_id = config.get("tunnel", "Unknown")
-                ingress_rules = config.get("ingress", [])
-        except:
-            pass
-    return tunnel_id, ingress_rules
 
 def start_tunnel_background(tunnel_name: str):
     """
@@ -280,10 +153,10 @@ def setup():
             if install_cloudflared():
                 console.print("[green]cloudflared installed successfully![/green]")
             else:
-                console.print("[red]Failed to install cloudflared. Please install it manually.[/red]")
+                console.print("[red]Failed to install cloudflared. Please try installing it manually (e.g., 'sudo apt install cloudflared').[/red]")
                 raise typer.Exit(code=1)
         else:
-            console.print("[yellow]Please install cloudflared to continue.[/yellow]")
+            console.print("[yellow]Cloudflared is required to continue. Please install it and run setup again.[/yellow]")
             raise typer.Exit(code=1)
     else:
         console.print("[green]cloudflared is already installed.[/green]")
@@ -303,7 +176,7 @@ def setup():
                     run_command(["cloudflared", "tunnel", "login"], check=True)
                 console.print("[green]Login successful![/green]")
             except Exception:
-                console.print("[red]Login failed or was cancelled.[/red]")
+                console.print("[red]Login failed or was cancelled. Please check your internet connection and try again.[/red]")
                 raise typer.Exit(code=1)
     else:
         console.print(f"[green]Already logged in.[/green] (Found {cert_path})")
@@ -342,6 +215,7 @@ def setup():
         
     except Exception as e:
         console.print(f"[red]Error creating tunnel: {e}[/red]")
+        console.print("[yellow]Tip: Ensure you are logged in and have permissions to create tunnels.[/yellow]")
         raise typer.Exit(code=1)
 
     time.sleep(1)
@@ -349,14 +223,20 @@ def setup():
 
     # 4. Route DNS
     refresh_interface(step_index)
-    domain = Prompt.ask("Enter the hostname you want to assign (e.g., app.example.com)")
     
-    try:
-        with console.status(f"[bold green]Routing {domain} to tunnel...[/bold green]"):
-            run_command(["cloudflared", "tunnel", "route", "dns", tunnel_id, domain], check=True)
-        console.print(f"[green]Successfully routed {domain} to tunnel![/green]")
-    except Exception as e:
-        console.print(f"[red]Failed to route DNS: {e}[/red]")
+    domain = ""
+    if Confirm.ask("Do you want to route a DNS hostname now?", default=True):
+        domain = Prompt.ask("Enter the hostname you want to assign (e.g., app.example.com)")
+        try:
+            with console.status(f"[bold green]Routing {domain} to tunnel...[/bold green]"):
+                run_command(["cloudflared", "tunnel", "route", "dns", tunnel_id, domain], check=True)
+            console.print(f"[green]Successfully routed {domain} to tunnel![/green]")
+        except Exception as e:
+            console.print(f"[red]Failed to route DNS: {e}[/red]")
+            console.print("[yellow]You can try routing it manually later using 'cloudflared tunnel route dns <UUID> <HOSTNAME>'.[/yellow]")
+    else:
+        domain = Prompt.ask("Enter the hostname you PLAN to use (for config generation)", default="app.example.com")
+        console.print("[yellow]Skipping DNS routing. You will need to add a CNAME record manually.[/yellow]")
 
     time.sleep(1)
     step_index += 1
@@ -379,11 +259,16 @@ def setup():
         ]
     }
     
-    config_file = Path("config.yml")
-    with open(config_file, "w") as f:
-        yaml.dump(config_content, f, sort_keys=False)
+    # Ensure directory exists
+    TUNNEL_DIR.mkdir(exist_ok=True)
     
-    console.print(f"[green]Configuration saved to {config_file.absolute()}[/green]")
+    with open(CONFIG_FILE, "w") as f:
+        yaml.dump(config_content, f, sort_keys=False)
+        
+    # Set permissions to 600 (Read/Write for owner only)
+    os.chmod(CONFIG_FILE, 0o600)
+    
+    console.print(f"[green]Configuration saved securely to {CONFIG_FILE.absolute()}[/green]")
     
     time.sleep(1)
     step_index += 1
@@ -395,118 +280,59 @@ def setup():
     if Confirm.ask("Do you want to run the tunnel now?"):
         start_tunnel_background(tunnel_name)
 
+def _start():
+    if is_tunnel_running():
+        console.print("[yellow]Tunnel is already running. Use 'tunnelflare stop' to stop it first.[/yellow]")
+        return
+
+    if not CONFIG_FILE.exists():
+        console.print(f"[red]No configuration file found at {CONFIG_FILE}.[/red]")
+        console.print("[yellow]Please run 'tunnelflare setup' to create a new tunnel configuration.[/yellow]")
+        return
+
+    try:
+        with open(CONFIG_FILE, "r") as f:
+            config = yaml.safe_load(f)
+        
+        tunnel_id = config.get("tunnel")
+        if not tunnel_id:
+            console.print("[red]Invalid configuration: Tunnel ID missing.[/red]")
+            console.print("[yellow]Your configuration file seems corrupted. Please run 'tunnelflare setup' to reconfigure.[/yellow]")
+            return
+            
+        console.print(f"[green]Found configuration for Tunnel ID: {tunnel_id}[/green]")
+        start_tunnel_background(tunnel_id)
+        
+    except Exception as e:
+        console.print(f"[red]Failed to start tunnel: {e}[/red]")
+        console.print("[yellow]Check the logs for more details.[/yellow]")
+
 @app.command()
 def start():
     """
     Start the tunnel using the existing configuration.
     """
     refresh_interface(-1)
-    
-    if is_tunnel_running():
-        console.print("[yellow]Tunnel is already running.[/yellow]")
-        return
-
-    config_file = Path("config.yml")
-    if not config_file.exists():
-        console.print("[red]No configuration file found. Please run 'setup' first.[/red]")
-        return
-
-    try:
-        with open(config_file, "r") as f:
-            config = yaml.safe_load(f)
-        
-        tunnel_id = config.get("tunnel")
-        if not tunnel_id:
-            console.print("[red]Invalid configuration: Tunnel ID missing.[/red]")
-            return
-            
-        # We can run by ID or Name. Since we stored ID in config, let's try running by ID.
-        # cloudflared tunnel run <UUID> works.
-        
-        console.print(f"[green]Found configuration for Tunnel ID: {tunnel_id}[/green]")
-        start_tunnel_background(tunnel_id)
-        
-    except Exception as e:
-        console.print(f"[red]Failed to start tunnel: {e}[/red]")
+    _start()
 
 @app.command()
 def status():
     """
-    Show live status, network topology, and resources of the running tunnel.
+    Show live interactive status dashboard (Textual TUI).
     """
+    try:
+        from tui import TunnelFlareApp
+        app = TunnelFlareApp()
+        app.run()
+    except ImportError:
+        console.print("[red]Textual is not installed. Please run './install.sh' again.[/red]")
+    except Exception as e:
+        console.print(f"[red]Error launching dashboard: {e}[/red]")
+
+def _stop():
     pid = is_tunnel_running()
     if not pid:
-        console.print("[red]Tunnel is not running.[/red]")
-        return
-
-    console.clear()
-    
-    # Get details for topology
-    tunnel_id, ingress_rules = get_config_details()
-    
-    layout = Layout()
-    
-    # New Layout Strategy:
-    # Top: Header (Logo) - Fixed size
-    # Bottom: Body
-    #   Body Left: Topology (Wider)
-    #   Body Right: Resources (Top, Larger) + Logs (Bottom, Smaller)
-    
-    layout.split(
-        Layout(name="header", size=8),
-        Layout(name="body")
-    )
-    
-    layout["header"].update(Align.center(Text.from_markup(TUNNEL_FLARE_LOGO)))
-    
-    layout["body"].split_row(
-        Layout(name="left", ratio=3), # Wider Topology
-        Layout(name="right", ratio=2)
-    )
-    
-    layout["right"].split(
-        Layout(name="resources", ratio=2), # Larger Resources
-        Layout(name="logs", ratio=1) # Smaller Logs
-    )
-    
-    frame_count = 0
-    
-    with Live(layout, refresh_per_second=4, screen=True) as live:
-        while True:
-            # Check if still running
-            if not is_tunnel_running():
-                console.print("[red]Tunnel stopped unexpectedly.[/red]")
-                break
-
-            # Update Topology Animation
-            layout["left"].update(Panel(generate_tree_topology_animation(frame_count, tunnel_id, ingress_rules), title="[bold white]NETWORK TOPOLOGY[/]", border_style=CLOUDFLARE_ORANGE))
-            
-            # Update Resources
-            layout["resources"].update(Panel(get_resource_table(), title="[bold white]ACTIVE RESOURCES[/]", border_style="blue"))
-            
-            # Read last few lines of log
-            if LOG_FILE.exists():
-                try:
-                    # Simple tail implementation
-                    with open(LOG_FILE, "r") as f:
-                        lines = f.readlines()
-                        last_lines = "".join(lines[-8:]) # Reduced log lines
-                        current_status = Text(f"Tunnel PID: {pid}\n\n{last_lines}", style="green")
-                        layout["logs"].update(Panel(current_status, title="Tunnel Logs", border_style="green"))
-                except Exception:
-                    pass
-            
-            frame_count += 1
-            time.sleep(0.25)
-
-@app.command()
-def stop():
-    """
-    Stop the background tunnel process.
-    """
-    pid = is_tunnel_running()
-    if not pid:
-        console.print("[red]Tunnel is not running.[/red]")
+        console.print("[red]Tunnel is not running. No process to stop.[/red]")
         return
     
     try:
@@ -516,6 +342,25 @@ def stop():
             PID_FILE.unlink()
     except Exception as e:
         console.print(f"[red]Failed to stop tunnel: {e}[/red]")
+
+@app.command()
+def stop():
+    """
+    Stop the background tunnel process.
+    """
+    refresh_interface(-1)
+    _stop()
+
+@app.command()
+def restart():
+    """
+    Restart the tunnel process.
+    """
+    refresh_interface(-1)
+    console.print("[bold cyan]Restarting TunnelFlare...[/bold cyan]")
+    _stop()
+    time.sleep(2)
+    _start()
 
 @app.command()
 def install():
@@ -540,16 +385,15 @@ def reset():
     console.print(f"[{CLOUDFLARE_ORANGE}]Resetting TunnelFlare...[/{CLOUDFLARE_ORANGE}]")
     
     # 1. Remove config.yml
-    config_file = Path("config.yml")
-    if config_file.exists():
-        if Confirm.ask(f"Remove local configuration file ({config_file.absolute()})?"):
+    if CONFIG_FILE.exists():
+        if Confirm.ask(f"Remove local configuration file ({CONFIG_FILE.absolute()})?"):
             try:
-                config_file.unlink()
+                CONFIG_FILE.unlink()
                 console.print("[green]Configuration file removed.[/green]")
             except Exception as e:
                 console.print(f"[red]Failed to remove config file: {e}[/red]")
     else:
-        console.print("[yellow]No local configuration file found.[/yellow]")
+        console.print("[yellow]No secure configuration file found.[/yellow]")
 
     # 2. Remove .cloudflared directory (Optional)
     cloudflared_dir = Path.home() / ".cloudflared"
