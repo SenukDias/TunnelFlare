@@ -59,6 +59,41 @@ if ! "$INSTALL_DIR/venv/bin/pip" install -v --default-timeout=300 -r "$INSTALL_D
     exit 1
 fi
 
+# 5. Check & Install cloudflared
+if ! command -v cloudflared &> /dev/null; then
+    echo -e "${ORANGE}cloudflared not found. Installing...${NC}"
+    
+    ARCH=$(dpkg --print-architecture)
+    URL=""
+    if [ "$ARCH" = "amd64" ]; then
+        URL="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb"
+    elif [ "$ARCH" = "arm64" ]; then
+        URL="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64.deb"
+    elif [ "$ARCH" = "armhf" ]; then
+        URL="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-armhf.deb"
+    elif [ "$ARCH" = "386" ]; then
+        URL="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-386.deb"
+    else
+        echo -e "${RED}Unsupported architecture: $ARCH. Please install cloudflared manually.${NC}"
+    fi
+
+    if [ -n "$URL" ]; then
+        echo -e "Downloading cloudflared for $ARCH..."
+        wget -q -O /tmp/cloudflared.deb "$URL"
+        echo -e "Installing cloudflared (requires sudo)..."
+        sudo dpkg -i /tmp/cloudflared.deb
+        rm /tmp/cloudflared.deb
+        
+        if command -v cloudflared &> /dev/null; then
+            echo -e "${GREEN}cloudflared installed successfully!${NC}"
+        else
+            echo -e "${RED}Failed to install cloudflared.${NC}"
+        fi
+    fi
+else
+    echo -e "${GREEN}cloudflared is already installed.${NC}"
+fi
+
 # 5. Create Wrapper Script
 echo -e "Creating executable..."
 cat << EOF > "$INSTALL_DIR/tunnelflare"

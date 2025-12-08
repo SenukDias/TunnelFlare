@@ -38,9 +38,20 @@
 
 ## 📦 Installation
 
-### Automatic Install (Recommended)
+### Install from Release (.deb)
 
-Run the included installer to set up TunnelFlare globally on your system:
+If you downloaded the `.deb` package from Releases:
+
+```bash
+sudo dpkg -i tunnelflare_1.0.0_amd64.deb
+sudo apt-get install -f  # Fix dependencies if needed
+```
+
+This will automatically install `cloudflared` if it's missing.
+
+### Automatic Install (Script)
+
+Run the included installer to set up TunnelFlare globally on your system from source:
 
 ```bash
 ./install.sh
@@ -49,7 +60,17 @@ Run the included installer to set up TunnelFlare globally on your system:
 This will:
 1.  Create a hidden directory `~/.tunnelflare`.
 2.  Set up a virtual environment and install dependencies.
-3.  Create a global `tunnelflare` command.
+3.  Check for and install `cloudflared` if missing.
+4.  Create a global `tunnelflare` command.
+
+### Build from Source
+
+To build a `.deb` package yourself:
+
+```bash
+./build_deb.sh
+```
+This will create a `tunnelflare_1.0.0_amd64.deb` file in the current directory.
 
 ### Manual Install
 
