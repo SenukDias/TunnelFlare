@@ -15,7 +15,11 @@
 
 ---
 
-**TunnelFlare** is a powerful, visually engaging CLI tool designed to automate and manage Cloudflare Tunnels. It transforms the complex process of exposing local services to the internet into a simple, interactive experience with a retro-hacker aesthetic.
+**TunnelFlare** is a powerful, visually engaging CLI tool designed to- A Cloudflare account.
+- A domain added to your Cloudflare account.
+- Python 3.8+
+- **Raspberry Pi / ARM**: Fully supported! The installer will automatically detect your architecture and install the correct version of `cloudflared`.
+    - *Note: On some Raspberry Pi OS versions, you might need to install `python3-venv` manually if the installer fails: `sudo apt install python3-venv`.*automate and manage Cloudflare Tunnels. It transforms the complex process of exposing local services to the internet into a simple, interactive experience with a retro-hacker aesthetic.
 
 ## ✨ Key Features
 

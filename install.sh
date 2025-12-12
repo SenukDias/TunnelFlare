@@ -47,9 +47,38 @@ if [ -f /tmp/tunnelflare_pid_backup ]; then
     mv /tmp/tunnelflare_pid_backup "$INSTALL_DIR/tunnel.pid"
 fi
 
+# Check if running as root
+if [ "$EUID" -eq 0 ]; then
+    echo -e "${ORANGE}Warning: You are running this script as root.${NC}"
+    echo -e "TunnelFlare will be installed to /root/.tunnelflare."
+    echo -e "If you want to install it for your user, run without sudo (you will be prompted for sudo password only when needed)."
+    read -p "Continue? [y/N] " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        exit 1
+    fi
+fi
+
 # 3. Create Virtual Environment
 echo -e "Creating virtual environment..."
-python3 -m venv "$INSTALL_DIR/venv"
+if ! python3 -m venv "$INSTALL_DIR/venv"; then
+    echo -e "${ORANGE}Failed to create virtual environment. Attempting to install python3-venv...${NC}"
+    if command -v apt &> /dev/null; then
+        echo -e "Installing python3-venv (requires sudo)..."
+        sudo apt update && sudo apt install -y python3-venv python3-full
+        
+        # Retry venv creation
+        if ! python3 -m venv "$INSTALL_DIR/venv"; then
+             echo -e "${RED}Still unable to create virtual environment.${NC}"
+             echo -e "Please install python3-venv manually: sudo apt install python3-venv"
+             exit 1
+        fi
+    else
+        echo -e "${RED}python3-venv is missing and could not be auto-installed.${NC}"
+        echo -e "Please install it manually using your package manager."
+        exit 1
+    fi
+fi
 
 # 4. Install Dependencies
 echo -e "Installing dependencies..."
