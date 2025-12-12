@@ -55,7 +55,7 @@ This will:
 
 1.  Clone the repository:
     ```bash
-    git clone https://github.com/yourusername/TunnelFlare.git
+    git clone https://github.com/senukdias/TunnelFlare.git
     cd TunnelFlare
     ```
 2.  Install dependencies:
