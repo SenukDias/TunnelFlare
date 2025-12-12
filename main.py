@@ -98,7 +98,7 @@ def start_tunnel_background(tunnel_name: str):
     
     with open(LOG_FILE, "w") as log:
         process = subprocess.Popen(
-            ["cloudflared", "tunnel", "--config", str(CONFIG_FILE), "run"],
+            ["cloudflared", "tunnel", "run", "--config", str(CONFIG_FILE)],
             stdout=log,
             stderr=subprocess.STDOUT,
             start_new_session=True # Detach from terminal
@@ -302,6 +302,24 @@ def _start():
             return
             
         console.print(f"[green]Found configuration for Tunnel ID: {tunnel_id}[/green]")
+        
+        # Validate Credentials File
+        cred_file = config.get("credentials-file")
+        if cred_file:
+            cred_path = Path(cred_file)
+            if not cred_path.exists():
+                console.print(f"[red]Error: Credentials file not found at {cred_path}[/red]")
+                
+                if str(cred_path).startswith("/root") and os.geteuid() != 0:
+                     console.print("[yellow]Warning: The configuration points to a file in /root, but you are not running as root.[/yellow]")
+                     console.print("[yellow]This usually happens if you ran 'setup' with sudo previously.[/yellow]")
+                     console.print("[bold]Solution:[/bold] Run [cyan]tunnelflare reset[/cyan] and then [cyan]tunnelflare setup[/cyan] (without sudo).")
+                     return
+                else:
+                     console.print("[yellow]Your tunnel credentials seem to be missing.[/yellow]")
+                     console.print("[bold]Solution:[/bold] Run [cyan]tunnelflare reset[/cyan] and then [cyan]tunnelflare setup[/cyan] to regenerate them.")
+                     return
+        
         start_tunnel_background(tunnel_id)
         
     except Exception as e:
