@@ -80,7 +80,7 @@ This will create a `tunnelflare_1.0.0_amd64.deb` file in the current directory.
 
 1.  Clone the repository:
     ```bash
-    git clone https://github.com/yourusername/TunnelFlare.git
+    git clone https://github.com/senukdias/TunnelFlare.git
     cd TunnelFlare
     ```
 2.  Install dependencies:
