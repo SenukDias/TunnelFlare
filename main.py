@@ -98,7 +98,7 @@ def start_tunnel_background(tunnel_name: str):
     
     with open(LOG_FILE, "w") as log:
         process = subprocess.Popen(
-            ["cloudflared", "tunnel", "run", tunnel_name],
+            ["cloudflared", "tunnel", "--config", str(CONFIG_FILE), "run"],
             stdout=log,
             stderr=subprocess.STDOUT,
             start_new_session=True # Detach from terminal
