@@ -593,15 +593,30 @@ class TunnelFlareApp(App):
             with open(CONFIG_FILE, "r") as f:
                 config = yaml.safe_load(f)
             tunnel_id = config.get("tunnel")
+            cred_file = config.get("credentials-file")
             
             if not tunnel_id:
                 self.notify("No Tunnel ID found in config", severity="error")
                 return
-                
+            
+            if not cred_file:
+                 self.notify("No Credentials File found in config", severity="error")
+                 return
+
             TUNNEL_DIR.mkdir(exist_ok=True)
+            
+            cmd = [
+                "cloudflared", 
+                "tunnel", 
+                "--config", str(CONFIG_FILE), 
+                "--cred-file", str(cred_file),
+                "run", 
+                tunnel_id
+            ]
+            
             with open(LOG_FILE, "w") as log:
                 process = subprocess.Popen(
-                    ["cloudflared", "tunnel", "run", tunnel_id],
+                    cmd,
                     stdout=log,
                     stderr=subprocess.STDOUT,
                     start_new_session=True
