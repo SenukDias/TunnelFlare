@@ -47,11 +47,20 @@ if [ -f /tmp/tunnelflare_pid_backup ]; then
     mv /tmp/tunnelflare_pid_backup "$INSTALL_DIR/tunnel.pid"
 fi
 
-# Check if running as root
-if [ "$EUID" -eq 0 ]; then
+# Check if running as root via sudo
+if [ "$EUID" -eq 0 ] && [ -n "$SUDO_USER" ]; then
+    echo -e "${ORANGE}Detected sudo usage. Dropping privileges to install for user '$SUDO_USER'...${NC}"
+    
+    # Re-run the script as the original user
+    # We preserve the environment but set HOME to the user's home
+    exec sudo -u "$SUDO_USER" bash -c "export HOME=/home/$SUDO_USER; $0 $*"
+    exit 0
+fi
+
+# Check if running as root (real root login)
+if [ "$EUID" -eq 0 ] && [ -z "$SUDO_USER" ]; then
     echo -e "${ORANGE}Warning: You are running this script as root.${NC}"
     echo -e "TunnelFlare will be installed to /root/.tunnelflare."
-    echo -e "If you want to install it for your user, run without sudo (you will be prompted for sudo password only when needed)."
     read -p "Continue? [y/N] " -n 1 -r
     echo
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
