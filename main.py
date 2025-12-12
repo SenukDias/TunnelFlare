@@ -172,8 +172,9 @@ def setup():
         console.print("A browser window will open. Please select your domain.")
         if Confirm.ask("Ready to login?"):
             try:
-                with console.status("[bold green]Waiting for login...[/bold green]"):
-                    run_command(["cloudflared", "tunnel", "login"], check=True)
+                console.print("[cyan]Launching Cloudflare login...[/cyan]")
+                console.print("[yellow]Please click the URL below if it doesn't open automatically:[/yellow]")
+                run_command(["cloudflared", "tunnel", "login"], check=True, capture_output=False)
                 console.print("[green]Login successful![/green]")
             except Exception:
                 console.print("[red]Login failed or was cancelled. Please check your internet connection and try again.[/red]")

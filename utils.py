@@ -55,20 +55,25 @@ def install_cloudflared() -> bool:
         console.print(f"[red]An error occurred: {e}[/red]")
         return False
 
-def run_command(command: list[str], check: bool = True) -> Optional[str]:
+def run_command(command: list[str], check: bool = True, capture_output: bool = True) -> Optional[str]:
     """Run a shell command and return its output."""
     try:
-        result = subprocess.run(
-            command, 
-            check=check, 
-            stdout=subprocess.PIPE, 
-            stderr=subprocess.PIPE,
-            text=True
-        )
-        return result.stdout.strip()
+        if capture_output:
+            result = subprocess.run(
+                command, 
+                check=check, 
+                stdout=subprocess.PIPE, 
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            return result.stdout.strip()
+        else:
+            subprocess.run(command, check=check)
+            return None
     except subprocess.CalledProcessError as e:
         console.print(f"[red]Command failed: {' '.join(command)}[/red]")
-        console.print(f"[red]Error: {e.stderr}[/red]")
+        if capture_output:
+            console.print(f"[red]Error: {e.stderr}[/red]")
         if check:
             raise e
         return None
