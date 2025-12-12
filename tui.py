@@ -603,6 +603,11 @@ class TunnelFlareApp(App):
                  self.notify("No Credentials File found in config", severity="error")
                  return
 
+            if not Path(cred_file).exists():
+                 self.notify(f"Credentials file missing: {cred_file}", severity="error")
+                 self.notify("Please run 'tunnelflare reset' then 'setup'", severity="warning")
+                 return
+
             TUNNEL_DIR.mkdir(exist_ok=True)
             
             cmd = [
