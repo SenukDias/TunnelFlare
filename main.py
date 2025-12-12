@@ -200,22 +200,50 @@ def setup():
     
     tunnel_id = None
     try:
-        with console.status(f"[bold green]Creating tunnel '{tunnel_name}'...[/bold green]"):
-            output = run_command(["cloudflared", "tunnel", "create", tunnel_name], check=False)
+        # Attempt to create tunnel
+        create_output = run_command(["cloudflared", "tunnel", "create", tunnel_name], check=False)
         
-        if output and "Tunnel credentials written" in output:
+        if create_output and "Tunnel credentials written" in create_output:
              console.print(f"[green]Tunnel '{tunnel_name}' created successfully![/green]")
-        elif output and "already exists" in output:
-             console.print(f"[yellow]Tunnel '{tunnel_name}' already exists. Using existing tunnel.[/yellow]")
         
-        # Get Tunnel ID
-        tunnels_list = run_command(["cloudflared", "tunnel", "list"], check=True)
-        for line in tunnels_list.splitlines():
-            if tunnel_name in line:
-                parts = line.split()
-                if len(parts) > 0:
-                    tunnel_id = parts[0]
-                    break
+        elif create_output and "already exists" in create_output:
+             console.print(f"[yellow]Tunnel '{tunnel_name}' already exists remotely.[/yellow]")
+             
+             # Get ID to check for local credentials
+             tunnels_list = run_command(["cloudflared", "tunnel", "list"], check=True)
+             for line in tunnels_list.splitlines():
+                if tunnel_name in line:
+                    parts = line.split()
+                    if len(parts) > 0:
+                        tunnel_id = parts[0]
+                        break
+             
+             if tunnel_id:
+                 cred_file = Path.home() / ".cloudflared" / f"{tunnel_id}.json"
+                 if not cred_file.exists():
+                     console.print(f"[red]But local credentials are missing for ID {tunnel_id}.[/red]")
+                     console.print("[cyan]Deleting old remote tunnel to recreate it...[/cyan]")
+                     run_command(["cloudflared", "tunnel", "delete", "-f", tunnel_name], check=False)
+                     
+                     # Try creating again
+                     create_output = run_command(["cloudflared", "tunnel", "create", tunnel_name], check=True)
+                     if "Tunnel credentials written" in create_output:
+                         console.print(f"[green]Tunnel '{tunnel_name}' recreated successfully![/green]")
+                     else:
+                         console.print("[red]Failed to recreate tunnel.[/red]")
+                         raise typer.Exit(code=1)
+                 else:
+                     console.print(f"[green]Using existing tunnel '{tunnel_name}' with valid credentials.[/green]")
+        
+        # Get Tunnel ID (if not already fetched)
+        if not tunnel_id:
+            tunnels_list = run_command(["cloudflared", "tunnel", "list"], check=True)
+            for line in tunnels_list.splitlines():
+                if tunnel_name in line:
+                    parts = line.split()
+                    if len(parts) > 0:
+                        tunnel_id = parts[0]
+                        break
         
         if not tunnel_id:
             console.print(f"[red]Could not find ID for tunnel '{tunnel_name}'.[/red]")
