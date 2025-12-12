@@ -62,20 +62,32 @@ fi
 # 3. Create Virtual Environment
 echo -e "Creating virtual environment..."
 if ! python3 -m venv "$INSTALL_DIR/venv"; then
-    echo -e "${ORANGE}Failed to create virtual environment. Attempting to install python3-venv...${NC}"
+    echo -e "${ORANGE}Failed to create virtual environment. Attempting to fix...${NC}"
+    
     if command -v apt &> /dev/null; then
-        echo -e "Installing python3-venv (requires sudo)..."
-        sudo apt update && sudo apt install -y python3-venv python3-full
+        # Detect Python version (e.g., 3.11, 3.12)
+        PY_VERSION=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+        echo -e "Detected Python $PY_VERSION"
+        
+        echo -e "Installing python3-venv and python3.$PY_VERSION-venv (requires sudo)..."
+        # Try installing generic and specific version
+        if sudo apt update && sudo apt install -y "python3-venv" "python3.$PY_VERSION-venv"; then
+            echo -e "${GREEN}Dependencies installed.${NC}"
+        else
+            echo -e "${RED}Failed to install python3-venv packages via apt.${NC}"
+        fi
         
         # Retry venv creation
+        echo -e "Retrying virtual environment creation..."
         if ! python3 -m venv "$INSTALL_DIR/venv"; then
              echo -e "${RED}Still unable to create virtual environment.${NC}"
-             echo -e "Please install python3-venv manually: sudo apt install python3-venv"
+             echo -e "Please try running the following command manually:"
+             echo -e "  sudo apt install python3-venv python3.$PY_VERSION-venv"
              exit 1
         fi
     else
-        echo -e "${RED}python3-venv is missing and could not be auto-installed.${NC}"
-        echo -e "Please install it manually using your package manager."
+        echo -e "${RED}python3-venv is missing and 'apt' is not available.${NC}"
+        echo -e "Please install python3-venv manually using your package manager."
         exit 1
     fi
 fi
