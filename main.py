@@ -288,7 +288,8 @@ def setup():
     console.print("You can now run the tunnel.")
     
     if Confirm.ask("Do you want to run the tunnel now?"):
-        start_tunnel_background(tunnel_name)
+        cred_path = Path.home() / ".cloudflared" / f"{tunnel_id}.json"
+        start_tunnel_background(tunnel_id, CONFIG_FILE, cred_path)
 
 def _start():
     if is_tunnel_running():
