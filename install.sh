@@ -69,9 +69,9 @@ if ! python3 -m venv "$INSTALL_DIR/venv"; then
         PY_VERSION=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
         echo -e "Detected Python $PY_VERSION"
         
-        echo -e "Installing python3-venv and python3.$PY_VERSION-venv (requires sudo)..."
+        echo -e "Installing python3-venv and python$PY_VERSION-venv (requires sudo)..."
         # Try installing generic and specific version
-        if sudo apt update && sudo apt install -y "python3-venv" "python3.$PY_VERSION-venv"; then
+        if sudo apt update && sudo apt install -y "python3-venv" "python$PY_VERSION-venv"; then
             echo -e "${GREEN}Dependencies installed.${NC}"
         else
             echo -e "${RED}Failed to install python3-venv packages via apt.${NC}"
@@ -82,7 +82,7 @@ if ! python3 -m venv "$INSTALL_DIR/venv"; then
         if ! python3 -m venv "$INSTALL_DIR/venv"; then
              echo -e "${RED}Still unable to create virtual environment.${NC}"
              echo -e "Please try running the following command manually:"
-             echo -e "  sudo apt install python3-venv python3.$PY_VERSION-venv"
+             echo -e "  sudo apt install python3-venv python$PY_VERSION-venv"
              exit 1
         fi
     else
