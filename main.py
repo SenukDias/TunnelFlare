@@ -90,15 +90,24 @@ def refresh_interface(current_step_index: int):
     console.print(get_header(current_step_index))
     console.print("\n")
 
-def start_tunnel_background(tunnel_name: str):
+def start_tunnel_background(tunnel_id: str, config_path: Path, cred_path: Path):
     """
     Starts the tunnel in the background and saves the PID.
     """
     TUNNEL_DIR.mkdir(exist_ok=True)
     
+    cmd = [
+        "cloudflared", 
+        "tunnel", 
+        "--config", str(config_path), 
+        "--cred-file", str(cred_path),
+        "run", 
+        tunnel_id
+    ]
+    
     with open(LOG_FILE, "w") as log:
         process = subprocess.Popen(
-            ["cloudflared", "tunnel", "run", "--config", str(CONFIG_FILE)],
+            cmd,
             stdout=log,
             stderr=subprocess.STDOUT,
             start_new_session=True # Detach from terminal
@@ -107,7 +116,7 @@ def start_tunnel_background(tunnel_name: str):
     with open(PID_FILE, "w") as f:
         f.write(str(process.pid))
         
-    console.print(f"[green]Tunnel '{tunnel_name}' started in background (PID: {process.pid}).[/green]")
+    console.print(f"[green]Tunnel '{tunnel_id}' started in background (PID: {process.pid}).[/green]")
     console.print(f"Logs are being written to {LOG_FILE}")
     console.print(f"\n[bold]Run [cyan]tunnelflare status[/cyan] to view live status.[/bold]")
 
@@ -279,7 +288,8 @@ def setup():
     console.print("You can now run the tunnel.")
     
     if Confirm.ask("Do you want to run the tunnel now?"):
-        start_tunnel_background(tunnel_name)
+        cred_path = Path.home() / ".cloudflared" / f"{tunnel_id}.json"
+        start_tunnel_background(tunnel_id, CONFIG_FILE, cred_path)
 
 def _start():
     if is_tunnel_running():
@@ -319,8 +329,11 @@ def _start():
                      console.print("[yellow]Your tunnel credentials seem to be missing.[/yellow]")
                      console.print("[bold]Solution:[/bold] Run [cyan]tunnelflare reset[/cyan] and then [cyan]tunnelflare setup[/cyan] to regenerate them.")
                      return
+        else:
+             console.print("[red]Error: Credentials file not defined in configuration.[/red]")
+             return
         
-        start_tunnel_background(tunnel_id)
+        start_tunnel_background(tunnel_id, CONFIG_FILE, cred_path)
         
     except Exception as e:
         console.print(f"[red]Failed to start tunnel: {e}[/red]")
