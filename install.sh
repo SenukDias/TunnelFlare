@@ -47,9 +47,38 @@ if [ -f /tmp/tunnelflare_pid_backup ]; then
     mv /tmp/tunnelflare_pid_backup "$INSTALL_DIR/tunnel.pid"
 fi
 
+# Check if running as root
+if [ "$EUID" -eq 0 ]; then
+    echo -e "${ORANGE}Warning: You are running this script as root.${NC}"
+    echo -e "TunnelFlare will be installed to /root/.tunnelflare."
+    echo -e "If you want to install it for your user, run without sudo (you will be prompted for sudo password only when needed)."
+    read -p "Continue? [y/N] " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        exit 1
+    fi
+fi
+
 # 3. Create Virtual Environment
 echo -e "Creating virtual environment..."
-python3 -m venv "$INSTALL_DIR/venv"
+if ! python3 -m venv "$INSTALL_DIR/venv"; then
+    echo -e "${ORANGE}Failed to create virtual environment. Attempting to install python3-venv...${NC}"
+    if command -v apt &> /dev/null; then
+        echo -e "Installing python3-venv (requires sudo)..."
+        sudo apt update && sudo apt install -y python3-venv python3-full
+        
+        # Retry venv creation
+        if ! python3 -m venv "$INSTALL_DIR/venv"; then
+             echo -e "${RED}Still unable to create virtual environment.${NC}"
+             echo -e "Please install python3-venv manually: sudo apt install python3-venv"
+             exit 1
+        fi
+    else
+        echo -e "${RED}python3-venv is missing and could not be auto-installed.${NC}"
+        echo -e "Please install it manually using your package manager."
+        exit 1
+    fi
+fi
 
 # 4. Install Dependencies
 echo -e "Installing dependencies..."
@@ -57,6 +86,41 @@ echo -e "Installing dependencies..."
 if ! "$INSTALL_DIR/venv/bin/pip" install -v --default-timeout=300 -r "$INSTALL_DIR/requirements.txt"; then
     echo -e "${RED}Failed to install dependencies. Please check your internet connection and try again.${NC}"
     exit 1
+fi
+
+# 5. Check & Install cloudflared
+if ! command -v cloudflared &> /dev/null; then
+    echo -e "${ORANGE}cloudflared not found. Installing...${NC}"
+    
+    ARCH=$(dpkg --print-architecture)
+    URL=""
+    if [ "$ARCH" = "amd64" ]; then
+        URL="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb"
+    elif [ "$ARCH" = "arm64" ]; then
+        URL="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64.deb"
+    elif [ "$ARCH" = "armhf" ]; then
+        URL="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-armhf.deb"
+    elif [ "$ARCH" = "386" ]; then
+        URL="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-386.deb"
+    else
+        echo -e "${RED}Unsupported architecture: $ARCH. Please install cloudflared manually.${NC}"
+    fi
+
+    if [ -n "$URL" ]; then
+        echo -e "Downloading cloudflared for $ARCH..."
+        wget -q -O /tmp/cloudflared.deb "$URL"
+        echo -e "Installing cloudflared (requires sudo)..."
+        sudo dpkg -i /tmp/cloudflared.deb
+        rm /tmp/cloudflared.deb
+        
+        if command -v cloudflared &> /dev/null; then
+            echo -e "${GREEN}cloudflared installed successfully!${NC}"
+        else
+            echo -e "${RED}Failed to install cloudflared.${NC}"
+        fi
+    fi
+else
+    echo -e "${GREEN}cloudflared is already installed.${NC}"
 fi
 
 # 5. Create Wrapper Script
