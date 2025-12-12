@@ -159,10 +159,34 @@ mkdir -p "$BIN_DIR"
 ln -sf "$INSTALL_DIR/tunnelflare" "$BIN_DIR/tunnelflare"
 
 # 7. Check PATH
+# 7. Check PATH
 if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
     echo -e "${ORANGE}Warning: $BIN_DIR is not in your PATH.${NC}"
-    echo "Add the following line to your shell configuration file (.bashrc, .zshrc, etc.):"
-    echo "export PATH=\"\$PATH:$BIN_DIR\""
+    
+    SHELL_RC=""
+    if [ -n "$BASH_VERSION" ] || [ -n "$BASH" ]; then
+        SHELL_RC="$HOME/.bashrc"
+    elif [ -n "$ZSH_VERSION" ] || [ -n "$ZSH_NAME" ]; then
+        SHELL_RC="$HOME/.zshrc"
+    fi
+
+    if [ -n "$SHELL_RC" ] && [ -f "$SHELL_RC" ]; then
+        read -p "Do you want to add it to $SHELL_RC now? [y/N] " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            echo "" >> "$SHELL_RC"
+            echo "# TunnelFlare PATH" >> "$SHELL_RC"
+            echo "export PATH=\"\$PATH:$BIN_DIR\"" >> "$SHELL_RC"
+            echo -e "${GREEN}Added to $SHELL_RC.${NC}"
+            echo -e "${ORANGE}Please restart your terminal or run: source $SHELL_RC${NC}"
+        else
+             echo "Please manually add the following line to your shell configuration:"
+             echo "export PATH=\"\$PATH:$BIN_DIR\""
+        fi
+    else
+        echo "Please manually add the following line to your shell configuration:"
+        echo "export PATH=\"\$PATH:$BIN_DIR\""
+    fi
 fi
 
 echo -e "${GREEN}Installation Complete!${NC}"
