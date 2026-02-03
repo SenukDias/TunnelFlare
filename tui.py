@@ -605,7 +605,7 @@ class TunnelFlareApp(App):
         self.push_screen(AddDNSScreen(), check_add)
         
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        elif event.button.id == "btn_add":
+        if event.button.id == "btn_add":
             self.action_add_dns()
         elif event.button.id == "btn_edit":
             self.action_edit_dns()

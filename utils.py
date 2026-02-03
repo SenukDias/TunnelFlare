@@ -137,9 +137,24 @@ def add_ip_route(tunnel_id: str, cidr: str) -> bool:
     cmd = ["cloudflared", "tunnel", "route", "ip", "add", cidr, tunnel_id]
     
     try:
-        run_command(cmd, check=True, capture_output=False)
-        return True
-    except:
+        # We handle output manually to check for specific API errors
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        if result.returncode == 0:
+            return True
+            
+        # Check for specific "already exists" error
+        if "code: 1014" in result.stderr or "already have a route" in result.stderr:
+            console.print(f"[yellow]Route for {cidr} already exists (Code 1014).[/yellow]")
+            return True # Treat as success
+            
+        # Other errors
+        console.print(f"[red]Command failed: {' '.join(cmd)}[/red]")
+        console.print(f"[red]Error: {result.stderr.strip()}[/red]")
+        return False
+        
+    except Exception as e:
+        console.print(f"[red]Execution failed: {e}[/red]")
         return False
 
 def list_ip_routes(tunnel_id: str) -> list[dict]:

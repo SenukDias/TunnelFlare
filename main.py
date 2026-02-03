@@ -645,4 +645,5 @@ def vpn_status():
         
     console.print(table)
 
+if __name__ == "__main__":
     app()
