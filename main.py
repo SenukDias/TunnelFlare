@@ -90,15 +90,24 @@ def refresh_interface(current_step_index: int):
     console.print(get_header(current_step_index))
     console.print("\n")
 
-def start_tunnel_background(tunnel_name: str):
+def start_tunnel_background(tunnel_id: str, config_path: Path, cred_path: Path):
     """
     Starts the tunnel in the background and saves the PID.
     """
     TUNNEL_DIR.mkdir(exist_ok=True)
     
+    cmd = [
+        "cloudflared", 
+        "tunnel", 
+        "--config", str(config_path), 
+        "--cred-file", str(cred_path),
+        "run", 
+        tunnel_id
+    ]
+    
     with open(LOG_FILE, "w") as log:
         process = subprocess.Popen(
-            ["cloudflared", "tunnel", "run", tunnel_name],
+            cmd,
             stdout=log,
             stderr=subprocess.STDOUT,
             start_new_session=True # Detach from terminal
@@ -107,7 +116,7 @@ def start_tunnel_background(tunnel_name: str):
     with open(PID_FILE, "w") as f:
         f.write(str(process.pid))
         
-    console.print(f"[green]Tunnel '{tunnel_name}' started in background (PID: {process.pid}).[/green]")
+    console.print(f"[green]Tunnel '{tunnel_id}' started in background (PID: {process.pid}).[/green]")
     console.print(f"Logs are being written to {LOG_FILE}")
     console.print(f"\n[bold]Run [cyan]tunnelflare status[/cyan] to view live status.[/bold]")
 
@@ -172,8 +181,9 @@ def setup():
         console.print("A browser window will open. Please select your domain.")
         if Confirm.ask("Ready to login?"):
             try:
-                with console.status("[bold green]Waiting for login...[/bold green]"):
-                    run_command(["cloudflared", "tunnel", "login"], check=True)
+                console.print("[cyan]Launching Cloudflare login...[/cyan]")
+                console.print("[yellow]Please click the URL below if it doesn't open automatically:[/yellow]")
+                run_command(["cloudflared", "tunnel", "login"], check=True, capture_output=False)
                 console.print("[green]Login successful![/green]")
             except Exception:
                 console.print("[red]Login failed or was cancelled. Please check your internet connection and try again.[/red]")
@@ -190,22 +200,50 @@ def setup():
     
     tunnel_id = None
     try:
-        with console.status(f"[bold green]Creating tunnel '{tunnel_name}'...[/bold green]"):
-            output = run_command(["cloudflared", "tunnel", "create", tunnel_name], check=False)
+        # Attempt to create tunnel
+        create_output = run_command(["cloudflared", "tunnel", "create", tunnel_name], check=False)
         
-        if output and "Tunnel credentials written" in output:
+        if create_output and "Tunnel credentials written" in create_output:
              console.print(f"[green]Tunnel '{tunnel_name}' created successfully![/green]")
-        elif output and "already exists" in output:
-             console.print(f"[yellow]Tunnel '{tunnel_name}' already exists. Using existing tunnel.[/yellow]")
         
-        # Get Tunnel ID
-        tunnels_list = run_command(["cloudflared", "tunnel", "list"], check=True)
-        for line in tunnels_list.splitlines():
-            if tunnel_name in line:
-                parts = line.split()
-                if len(parts) > 0:
-                    tunnel_id = parts[0]
-                    break
+        elif create_output and "already exists" in create_output:
+             console.print(f"[yellow]Tunnel '{tunnel_name}' already exists remotely.[/yellow]")
+             
+             # Get ID to check for local credentials
+             tunnels_list = run_command(["cloudflared", "tunnel", "list"], check=True)
+             for line in tunnels_list.splitlines():
+                if tunnel_name in line:
+                    parts = line.split()
+                    if len(parts) > 0:
+                        tunnel_id = parts[0]
+                        break
+             
+             if tunnel_id:
+                 cred_file = Path.home() / ".cloudflared" / f"{tunnel_id}.json"
+                 if not cred_file.exists():
+                     console.print(f"[red]But local credentials are missing for ID {tunnel_id}.[/red]")
+                     console.print("[cyan]Deleting old remote tunnel to recreate it...[/cyan]")
+                     run_command(["cloudflared", "tunnel", "delete", "-f", tunnel_name], check=False)
+                     
+                     # Try creating again
+                     create_output = run_command(["cloudflared", "tunnel", "create", tunnel_name], check=True)
+                     if "Tunnel credentials written" in create_output:
+                         console.print(f"[green]Tunnel '{tunnel_name}' recreated successfully![/green]")
+                     else:
+                         console.print("[red]Failed to recreate tunnel.[/red]")
+                         raise typer.Exit(code=1)
+                 else:
+                     console.print(f"[green]Using existing tunnel '{tunnel_name}' with valid credentials.[/green]")
+        
+        # Get Tunnel ID (if not already fetched)
+        if not tunnel_id:
+            tunnels_list = run_command(["cloudflared", "tunnel", "list"], check=True)
+            for line in tunnels_list.splitlines():
+                if tunnel_name in line:
+                    parts = line.split()
+                    if len(parts) > 0:
+                        tunnel_id = parts[0]
+                        break
         
         if not tunnel_id:
             console.print(f"[red]Could not find ID for tunnel '{tunnel_name}'.[/red]")
@@ -304,7 +342,8 @@ def setup():
     console.print("You can now run the tunnel.")
     
     if Confirm.ask("Do you want to run the tunnel now?"):
-        start_tunnel_background(tunnel_name)
+        cred_path = Path.home() / ".cloudflared" / f"{tunnel_id}.json"
+        start_tunnel_background(tunnel_id, CONFIG_FILE, cred_path)
 
 def _start():
     if is_tunnel_running():
@@ -327,7 +366,28 @@ def _start():
             return
             
         console.print(f"[green]Found configuration for Tunnel ID: {tunnel_id}[/green]")
-        start_tunnel_background(tunnel_id)
+        
+        # Validate Credentials File
+        cred_file = config.get("credentials-file")
+        if cred_file:
+            cred_path = Path(cred_file)
+            if not cred_path.exists():
+                console.print(f"[red]Error: Credentials file not found at {cred_path}[/red]")
+                
+                if str(cred_path).startswith("/root") and os.geteuid() != 0:
+                     console.print("[yellow]Warning: The configuration points to a file in /root, but you are not running as root.[/yellow]")
+                     console.print("[yellow]This usually happens if you ran 'setup' with sudo previously.[/yellow]")
+                     console.print("[bold]Solution:[/bold] Run [cyan]tunnelflare reset[/cyan] and then [cyan]tunnelflare setup[/cyan] (without sudo).")
+                     return
+                else:
+                     console.print("[yellow]Your tunnel credentials seem to be missing.[/yellow]")
+                     console.print("[bold]Solution:[/bold] Run [cyan]tunnelflare reset[/cyan] and then [cyan]tunnelflare setup[/cyan] to regenerate them.")
+                     return
+        else:
+             console.print("[red]Error: Credentials file not defined in configuration.[/red]")
+             return
+        
+        start_tunnel_background(tunnel_id, CONFIG_FILE, cred_path)
         
     except Exception as e:
         console.print(f"[red]Failed to start tunnel: {e}[/red]")
