@@ -92,6 +92,78 @@ class AddDNSScreen(ModalScreen):
     def action_cancel(self):
         self.dismiss(None)
 
+class EditDNSScreen(ModalScreen):
+    """Screen for editing an existing DNS record."""
+    
+    CSS = """
+    EditDNSScreen {
+        align: center middle;
+    }
+    
+    #dialog {
+        padding: 1 2;
+        width: 60;
+        height: auto;
+        border: thick $background 80%;
+        background: $surface;
+    }
+    
+    #title {
+        content-align: center middle;
+        text-style: bold;
+        margin-bottom: 1;
+    }
+    
+    Input {
+        margin-bottom: 1;
+    }
+    
+    .buttons {
+        width: 100%;
+        height: auto;
+        align: center bottom;
+        margin-top: 1;
+    }
+    
+    Button {
+        margin: 0 1;
+    }
+    """
+
+    BINDINGS = [("escape", "cancel", "Cancel")]
+
+    def __init__(self, hostname, service):
+        super().__init__()
+        self.initial_hostname = hostname
+        self.initial_service = service
+
+    def compose(self) -> ComposeResult:
+        yield Vertical(
+            Label(f"Edit Record: {self.initial_hostname}", id="title"),
+            Label("Hostname (e.g., app.example.com):"),
+            Input(value=self.initial_hostname, id="hostname"),
+            Label("Local Service (e.g., http://localhost:8000 or ssh://localhost:22):"),
+            Input(value=self.initial_service, id="service"),
+            Horizontal(
+                Button("Save", variant="primary", id="save"),
+                Button("Cancel", variant="error", id="cancel"),
+                classes="buttons"
+            ),
+            id="dialog"
+        )
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "save":
+            hostname = self.query_one("#hostname", Input).value
+            service = self.query_one("#service", Input).value
+            if hostname and service:
+                self.dismiss((self.initial_hostname, hostname, service))
+        else:
+            self.dismiss(None)
+
+    def action_cancel(self):
+        self.dismiss(None)
+
 class TopologyWidget(Static):
     """Widget to display the network topology."""
     
@@ -407,6 +479,7 @@ class TunnelFlareApp(App):
             yield DataTable(id="resource_table")
             with Horizontal(id="controls"):
                 yield Button("Add DNS", id="btn_add", variant="primary")
+                yield Button("Edit Selected", id="btn_edit", variant="default")
                 yield Button("Remove Selected", id="btn_remove", variant="error")
                 yield Button("Start/Stop", id="btn_toggle", variant="warning")
                 yield Button("Restart", id="btn_restart", variant="default")
@@ -438,7 +511,14 @@ class TunnelFlareApp(App):
                             hostname = rule.get("hostname", "*")
                             service = rule.get("service", "N/A")
                             if service == "http_status:404": continue
-                            table.add_row(hostname, service, "Active")
+                            
+                            status = "Active"
+                            if service.startswith("ssh://"):
+                                status = "SSH 🔒"
+                            elif service.startswith("http"):
+                                status = "HTTP 🌐"
+                                
+                            table.add_row(hostname, service, status)
             except:
                 pass
 
@@ -486,14 +566,59 @@ class TunnelFlareApp(App):
         self.push_screen(AddDNSScreen(), check_add)
         
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "btn_add":
+        elif event.button.id == "btn_add":
             self.action_add_dns()
+        elif event.button.id == "btn_edit":
+            self.action_edit_dns()
         elif event.button.id == "btn_remove":
             self.remove_selected_dns()
         elif event.button.id == "btn_toggle":
             self.toggle_tunnel()
         elif event.button.id == "btn_restart":
             self.restart_tunnel()
+
+    def action_edit_dns(self):
+        table = self.query_one(DataTable)
+        if not table.cursor_coordinate: return
+        
+        row_key = table.coordinate_to_cell_key(table.cursor_coordinate).row_key
+        if not row_key: return
+        
+        row = table.get_row(row_key)
+        hostname = row[0]
+        service = row[1]
+        
+        def check_edit(result):
+            if result:
+                old_host, new_host, new_service = result
+                self.edit_dns_record(old_host, new_host, new_service)
+                
+        self.push_screen(EditDNSScreen(hostname, service), check_edit)
+
+    def edit_dns_record(self, old_hostname, new_hostname, new_service):
+        if not CONFIG_FILE.exists(): return
+        
+        try:
+            with open(CONFIG_FILE, "r") as f:
+                config = yaml.safe_load(f)
+            
+            if "ingress" in config:
+                for rule in config["ingress"]:
+                    if rule.get("hostname") == old_hostname:
+                        rule["hostname"] = new_hostname
+                        rule["service"] = new_service
+                        break
+                
+            with open(CONFIG_FILE, "w") as f:
+                yaml.dump(config, f, sort_keys=False)
+                
+            # Restart tunnel to apply changes
+            self.restart_tunnel()
+            self.refresh_resources()
+            self.notify(f"Updated {new_hostname}")
+            
+        except Exception as e:
+            self.notify(f"Error editing DNS: {e}", severity="error")
 
     def add_dns_record(self, hostname, service):
         if not CONFIG_FILE.exists(): return

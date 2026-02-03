@@ -225,45 +225,71 @@ def setup():
     refresh_interface(step_index)
     
     domain = ""
-    if Confirm.ask("Do you want to route a DNS hostname now?", default=True):
-        domain = Prompt.ask("Enter the hostname you want to assign (e.g., app.example.com)")
-        try:
-            with console.status(f"[bold green]Routing {domain} to tunnel...[/bold green]"):
-                run_command(["cloudflared", "tunnel", "route", "dns", tunnel_id, domain], check=True)
-            console.print(f"[green]Successfully routed {domain} to tunnel![/green]")
-        except Exception as e:
-            console.print(f"[red]Failed to route DNS: {e}[/red]")
-            console.print("[yellow]You can try routing it manually later using 'cloudflared tunnel route dns <UUID> <HOSTNAME>'.[/yellow]")
-    else:
-        domain = Prompt.ask("Enter the hostname you PLAN to use (for config generation)", default="app.example.com")
-        console.print("[yellow]Skipping DNS routing. You will need to add a CNAME record manually.[/yellow]")
-
-    time.sleep(1)
-    step_index += 1
-
-    # 5. Configuration
+    # 4. Route DNS & Configure Services
     refresh_interface(step_index)
-    local_service = Prompt.ask("Enter your local service URL", default="http://localhost:8000")
     
-    config_content = {
+    cred_path = Path.home() / ".cloudflared" / f"{tunnel_id}.json"
+    ingress_rules = []
+    
+    # Helper to add service
+    def add_service_prompt(default_type="http"):
+        while True:
+            console.print(f"\n[bold]Add a Service ({default_type.upper()})[/bold]")
+            if default_type == "ssh":
+                if not typer.confirm("Do you want to enable SSH access?", default=False):
+                    return None
+                hostname = typer.prompt("SSH Hostname (e.g., ssh.example.com)")
+                service = "ssh://localhost:22"
+            else:
+                if typer.confirm("Skip DNS routing for this service?", default=False):
+                    hostname = "*"
+                else:
+                    hostname = typer.prompt("Hostname (e.g., app.example.com)")
+                    
+                    # Route DNS if not wildcard
+                    if hostname != "*":
+                        try:
+                            run_command(["cloudflared", "tunnel", "route", "dns", tunnel_id, hostname], check=True)
+                            console.print(f"[green]DNS routed for {hostname}[/green]")
+                        except Exception as e:
+                            console.print(f"[red]Failed to route DNS: {e}[/red]")
+                            if not typer.confirm("Continue anyway?", default=True):
+                                return None
+
+                service = typer.prompt("Local Service URL", default="http://localhost:8000")
+            
+            return {"hostname": hostname, "service": service}
+
+    # Primary HTTP Service
+    console.print("\n[bold cyan]--- Primary Web Service ---[/bold cyan]")
+    primary = add_service_prompt("http")
+    if primary: ingress_rules.append(primary)
+    
+    # SSH Service
+    console.print("\n[bold cyan]--- SSH Access ---[/bold cyan]")
+    ssh_service = add_service_prompt("ssh")
+    if ssh_service: ingress_rules.append(ssh_service)
+    
+    # Additional Services
+    while typer.confirm("\nDo you want to add another service?", default=False):
+        extra = add_service_prompt("http")
+        if extra: ingress_rules.append(extra)
+        
+    # Add 404 fallback
+    ingress_rules.append({"service": "http_status:404"})
+    
+    # 5. Generate Config
+    config_data = {
         "tunnel": tunnel_id,
-        "credentials-file": str(Path.home() / ".cloudflared" / f"{tunnel_id}.json"),
-        "ingress": [
-            {
-                "hostname": domain,
-                "service": local_service
-            },
-            {
-                "service": "http_status:404"
-            }
-        ]
+        "credentials-file": str(cred_path),
+        "ingress": ingress_rules
     }
     
     # Ensure directory exists
     TUNNEL_DIR.mkdir(exist_ok=True)
     
     with open(CONFIG_FILE, "w") as f:
-        yaml.dump(config_content, f, sort_keys=False)
+        yaml.dump(config_data, f, sort_keys=False)
         
     # Set permissions to 600 (Read/Write for owner only)
     os.chmod(CONFIG_FILE, 0o600)
