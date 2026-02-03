@@ -17,6 +17,7 @@ import time
 import socket
 import requests
 from pathlib import Path
+from utils import list_ip_routes
 
 # Constants
 TUNNEL_DIR = Path.home() / ".tunnelflare"
@@ -297,6 +298,19 @@ class TopologyWidget(Static):
         elif self.log_status == "warning":
             color_tunnel = "yellow"
 
+        if self.log_status == "warning":
+            color_tunnel = "yellow"
+
+        # Check for VPN/WARP Mode
+        is_vpn = False
+        if CONFIG_FILE.exists():
+            try:
+                with open(CONFIG_FILE, "r") as f:
+                    c = yaml.safe_load(f)
+                    if c.get("warp-routing", {}).get("enabled"):
+                        is_vpn = True
+            except: pass
+
         # Retro Icons (Unicode Art)
         
         # Client (Retro PC)
@@ -324,9 +338,17 @@ class TopologyWidget(Static):
 CLOUDFLARE[/]""")
 
         # Tunnel (Retro Pipe/Gate)
-        icon_tunnel = Text.from_markup(f"""[{color_tunnel}]
+        # Tunnel (Retro Pipe/Gate)
+        if is_vpn:
+            tunnel_label = "WARP VPN"
+            tunnel_color = "magenta" if self.tunnel_status == "ok" else color_tunnel
+        else:
+             tunnel_label = " TUNNEL "
+             tunnel_color = color_tunnel
+             
+        icon_tunnel = Text.from_markup(f"""[{tunnel_color}]
  ╔══════╗ 
- ║TUNNEL║ 
+ ║{tunnel_label}║ 
  ║>>>>>>║ 
  ╚══════╝ 
   TUNNEL  [/]""")
@@ -519,6 +541,23 @@ class TunnelFlareApp(App):
                                 status = "HTTP 🌐"
                                 
                             table.add_row(hostname, service, status)
+            except:
+                pass
+        
+        # Add IP Routes
+        if CONFIG_FILE.exists():
+            try:
+                with open(CONFIG_FILE, "r") as f:
+                    config = yaml.safe_load(f)
+                    tunnel_id = config.get("tunnel")
+                    
+                if tunnel_id:
+                    routes = list_ip_routes(tunnel_id)
+                    for r in routes:
+                        net = r.get("network", "Unknown")
+                        # Check if it looks like a user comment or created date
+                        comment = r.get("comment") or r.get("created_at", "")
+                        table.add_row(net, "IP Route (VPN)", f"Active ⚡ ({comment})")
             except:
                 pass
 
