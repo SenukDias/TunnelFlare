@@ -508,10 +508,19 @@ class TopologyWidget(Static):
             if not active:
                 return Text(" ──[ OFFLINE ]──▶ ", style="dim #555555", justify="center")
 
-            # Dynamic animated wave packet
+        win_w = self.size.width if self.size.width > 0 else 120
+        is_compact = win_w < 110
+
+        # Helper to render animated kinetic packet pipeline
+        def make_pipeline_link(latency_ms: float, active: bool, warning: bool = False, error: bool = False) -> Text:
+            if not active:
+                pill = "OFF" if is_compact else "OFFLINE"
+                return Text(f" ─[{pill}]─▶ ", style="dim #555555", justify="center")
+
             t = self.anim_tick
+            wave_len = 4 if is_compact else 7
             wave_chars = []
-            for i in range(7):
+            for i in range(wave_len):
                 if (i - (t // 2)) % 4 == 0:
                     wave_chars.append("●")
                 else:
@@ -521,20 +530,22 @@ class TopologyWidget(Static):
             if error:
                 pill_style = "bold white on #FF1744"
                 wave_style = "bold #FF1744 blink"
-                pill_text = " ✖ DROP "
+                pill_text = " ✖ DROP " if not is_compact else " ✖ "
             elif warning or latency_ms > 80:
                 pill_style = "bold black on #FFD600"
                 wave_style = "bold #FFD600"
-                pill_text = f" {latency_ms:.0f}ms ! "
+                pill_text = f" {latency_ms:.0f}ms! " if not is_compact else f"{latency_ms:.0f}m"
             else:
                 pill_style = "bold black on #00E676"
                 wave_style = "bold #00E676"
-                pill_text = f" {latency_ms:.0f}ms "
+                pill_text = f" {latency_ms:.0f}ms " if not is_compact else f"{latency_ms:.0f}m"
 
             txt = Text()
             txt.append("\n")
-            txt.append(f"──[{pill_text}]──▶\n", style=pill_style if not error else "bold white on #FF1744")
-            txt.append(f"   {wave_str}   \n", style=wave_style)
+            prefix = "─[" if is_compact else "──["
+            suffix = "]─▶\n" if is_compact else "]──▶\n"
+            txt.append(f"{prefix}{pill_text}{suffix}", style=pill_style if not error else "bold white on #FF1744")
+            txt.append(f" {wave_str} \n", style=wave_style)
             return txt
 
         # Link pipelines
@@ -546,29 +557,55 @@ class TopologyWidget(Static):
         link_2 = make_pipeline_link(self.ping_rtt_ms, is_wan_up and is_tun_up, warning=self.log_status == "warning", error=self.log_status == "error")
         link_3 = make_pipeline_link(max(2.0, self.ping_rtt_ms * 0.35), is_target_up)
 
-        # Build Micro-Cards
-        card_1 = Text.from_markup(f"""[{col_host}]╔════ LOCAL HOST ════╗[/]
+        # Build Micro-Cards (Auto-scaling based on available terminal width)
+        if is_compact:
+            wan_state_txt = "ON ●" if is_wan_up else "OFF ✖"
+            tun_state_txt = "ACTIVE" if is_tun_up else ("STOP" if self.tunnel_status == "stopped" else "ERR")
+            target_txt = "REACH" if self.local_status == "ok" else "ISOL"
+
+            card_1 = Text.from_markup(f"""[{col_host}]╔═ LOCAL HOST ═╗[/]
+[{col_host}]║[/] [white bold]>_ CLIENT[/]    [{col_host}]║[/]
+[{col_host}]║[/] {self.local_ip[:12]:<12} [{col_host}]║[/]
+[{col_host}]╚══════════════╝[/]""")
+
+            card_2 = Text.from_markup(f"""[{col_wan}]╔═ WAN GATEWAY ╗[/]
+[{col_wan}]║[/] [white bold]🌐 INTERNET[/]  [{col_wan}]║[/]
+[{col_wan}]║[/] {self.public_ip[:12]:<12} [{col_wan}]║[/]
+[{col_wan}]╚══════════════╝[/]""")
+
+            card_3 = Text.from_markup(f"""[{col_edge}]╔═ CF ANYCAST ═╗[/]
+[{col_edge}]║[/] [white bold]☁ EDGE[/]       [{col_edge}]║[/]
+[{col_edge}]║[/] {self.edge_pop[:12]:<12} [{col_edge}]║[/]
+[{col_edge}]╚══════════════╝[/]""")
+
+            card_4 = Text.from_markup(f"""[{col_target}]╔═ TARGET LAN ═╗[/]
+[{col_target}]║[/] [white bold]🛡️ OVERLAY[/]   [{col_target}]║[/]
+[{col_target}]║[/] {target_txt:<12} [{col_target}]║[/]
+[{col_target}]╚══════════════╝[/]""")
+        else:
+            wan_state_txt = "ONLINE ●" if is_wan_up else "DOWN ✖"
+            tun_state_txt = "ACTIVE ●" if is_tun_up else ("STOPPED ○" if self.tunnel_status == "stopped" else "ERROR ✖")
+            target_txt = "REACHABLE ●" if self.local_status == "ok" else "ISOLATED ○"
+
+            card_1 = Text.from_markup(f"""[{col_host}]╔════ LOCAL HOST ════╗[/]
 [{col_host}]║[/] [white bold]>_ HOST CLIENT[/]   [{col_host}]║[/]
 [{col_host}]║[/] IP: [bold]{self.local_ip:<14}[/] [{col_host}]║[/]
 [{col_host}]║[/] Net: [dim]LAN Active[/]     [{col_host}]║[/]
 [{col_host}]╚════════════════════╝[/]""")
 
-        wan_state_txt = "ONLINE ●" if is_wan_up else "DOWN ✖"
-        card_2 = Text.from_markup(f"""[{col_wan}]╔════ WAN GATEWAY ═══╗[/]
+            card_2 = Text.from_markup(f"""[{col_wan}]╔════ WAN GATEWAY ═══╗[/]
 [{col_wan}]║[/] [white bold]🌐 PUBLIC INTERNET[/] [{col_wan}]║[/]
 [{col_wan}]║[/] IP: [bold]{self.public_ip[:14]:<14}[/] [{col_wan}]║[/]
 [{col_wan}]║[/] State: [{col_wan}]{wan_state_txt:<13}[/] [{col_wan}]║[/]
 [{col_wan}]╚════════════════════╝[/]""")
 
-        tun_state_txt = "ACTIVE ●" if is_tun_up else ("STOPPED ○" if self.tunnel_status == "stopped" else "ERROR ✖")
-        card_3 = Text.from_markup(f"""[{col_edge}]╔════ CF ANYCAST ════╗[/]
+            card_3 = Text.from_markup(f"""[{col_edge}]╔════ CF ANYCAST ════╗[/]
 [{col_edge}]║[/] [white bold]☁  ZERO TRUST[/]     [{col_edge}]║[/]
 [{col_edge}]║[/] PoP: [bold]{self.edge_pop:<13}[/] [{col_edge}]║[/]
 [{col_edge}]║[/] State: [{col_edge}]{tun_state_txt:<13}[/] [{col_edge}]║[/]
 [{col_edge}]╚════════════════════╝[/]""")
 
-        target_txt = "REACHABLE ●" if self.local_status == "ok" else "ISOLATED ○"
-        card_4 = Text.from_markup(f"""[{col_target}]╔═══ TARGET SUBNET ══╗[/]
+            card_4 = Text.from_markup(f"""[{col_target}]╔═══ TARGET SUBNET ══╗[/]
 [{col_target}]║[/] [white bold]🛡️ PRIVATE OVERLAY[/]  [{col_target}]║[/]
 [{col_target}]║[/] Type: [bold]Ingress / CIDR[/] [{col_target}]║[/]
 [{col_target}]║[/] State: [{col_target}]{target_txt:<13}[/] [{col_target}]║[/]
@@ -591,25 +628,39 @@ class TopologyWidget(Static):
             "[bold black on #FFD600] WARNING [/]" if self.log_status == "warning" else "[bold white on #FF1744] OFFLINE [/]"
         )
 
-        stat_line_1 = Text.from_markup(
-            f" 📊 [bold white]RTT:[/] [cyan]{self.ping_rtt_ms:.1f}ms[/] (Min: [green]{self.min_rtt_ms:.1f}[/] | Max: [yellow]{self.max_rtt_ms:.1f}[/]) │ "
-            f"[bold white]Jitter:[/] [cyan]±{self.jitter_ms:.1f}ms[/] │ "
-            f"[bold white]Loss:[/] [{'green' if self.packet_loss_pct == 0 else 'red'}]{self.packet_loss_pct:.1f}%[/] │ "
-            f"[bold white]Bandwidth:[/] ▲ [cyan]{self.bytes_out_sec/1024:.0f} KB/s[/]  ▼ [cyan]{self.bytes_in_sec/1024:.0f} KB/s[/] │ "
-            f"[bold white]Streams:[/] [magenta]{self.quic_streams} Active[/]"
-        )
+        divider_len = max(20, min(140, win_w - 6))
 
-        stat_line_2 = Text.from_markup(
-            f" ⚡ [bold white]Tunnel ID:[/] [cyan]{self.tunnel_id}[/] │ "
-            f"[bold white]Protocol:[/] [bold {CLOUDFLARE_ORANGE}]{self.tunnel_protocol}[/] │ "
-            f"[bold white]ISP:[/] [dim]{self.isp_name}[/] │ "
-            f"[bold white]Status:[/] {health_badge}"
-        )
+        if is_compact:
+            stat_line_1 = Text.from_markup(
+                f" 📊 [bold]RTT:[/] [cyan]{self.ping_rtt_ms:.0f}ms[/] │ "
+                f"[bold]Jitter:[/] [cyan]±{self.jitter_ms:.1f}ms[/] │ "
+                f"[bold]Loss:[/] [{'green' if self.packet_loss_pct == 0 else 'red'}]{self.packet_loss_pct:.0f}%[/] │ "
+                f"[bold]Speed:[/] ▲[cyan]{self.bytes_out_sec/1024:.0f}K[/] ▼[cyan]{self.bytes_in_sec/1024:.0f}K[/]"
+            )
+            stat_line_2 = Text.from_markup(
+                f" ⚡ [bold]Tunnel:[/] [cyan]{self.tunnel_id[:10]}[/] │ "
+                f"[bold]Proto:[/] [bold {CLOUDFLARE_ORANGE}]{self.tunnel_protocol.split('/')[0].strip()}[/] │ "
+                f"[bold]Status:[/] {health_badge}"
+            )
+        else:
+            stat_line_1 = Text.from_markup(
+                f" 📊 [bold white]RTT:[/] [cyan]{self.ping_rtt_ms:.1f}ms[/] (Min: [green]{self.min_rtt_ms:.1f}[/] | Max: [yellow]{self.max_rtt_ms:.1f}[/]) │ "
+                f"[bold white]Jitter:[/] [cyan]±{self.jitter_ms:.1f}ms[/] │ "
+                f"[bold white]Loss:[/] [{'green' if self.packet_loss_pct == 0 else 'red'}]{self.packet_loss_pct:.1f}%[/] │ "
+                f"[bold white]Bandwidth:[/] ▲ [cyan]{self.bytes_out_sec/1024:.0f} KB/s[/]  ▼ [cyan]{self.bytes_in_sec/1024:.0f} KB/s[/] │ "
+                f"[bold white]Streams:[/] [magenta]{self.quic_streams} Active[/]"
+            )
+            stat_line_2 = Text.from_markup(
+                f" ⚡ [bold white]Tunnel ID:[/] [cyan]{self.tunnel_id}[/] │ "
+                f"[bold white]Protocol:[/] [bold {CLOUDFLARE_ORANGE}]{self.tunnel_protocol}[/] │ "
+                f"[bold white]ISP:[/] [dim]{self.isp_name}[/] │ "
+                f"[bold white]Status:[/] {health_badge}"
+            )
 
         telemetry_table = Table.grid(expand=True, padding=0)
         telemetry_table.add_column(justify="left")
         telemetry_table.add_row(top_grid)
-        telemetry_table.add_row(Text("─" * 120, style="dim #2D3142"))
+        telemetry_table.add_row(Text("─" * divider_len, style="dim #2D3142"))
         telemetry_table.add_row(stat_line_1)
         telemetry_table.add_row(stat_line_2)
 
@@ -637,7 +688,9 @@ class TunnelFlareApp(App):
     }}
 
     #topology {{
-        height: 14;
+        height: auto;
+        min-height: 9;
+        max-height: 14;
         margin-bottom: 0;
     }}
 
@@ -645,6 +698,22 @@ class TunnelFlareApp(App):
         layout: horizontal;
         height: 1fr;
         margin-top: 0;
+    }}
+
+    #workspace.stacked {{
+        layout: vertical;
+    }}
+
+    #workspace.stacked #resources-container {{
+        width: 100%;
+        height: 1fr;
+        margin-right: 0;
+        margin-bottom: 1;
+    }}
+
+    #workspace.stacked #logs-container {{
+        width: 100%;
+        height: 1fr;
     }}
 
     #resources-container {{
@@ -762,6 +831,25 @@ class TunnelFlareApp(App):
         self.init_log_stream()
         self.set_interval(0.5, self.stream_new_logs)
         self.set_interval(2.0, self.update_controls_state)
+        # Trigger initial responsive layout adjustment
+        self.check_responsive_layout(self.size.width)
+
+    def on_resize(self, event) -> None:
+        """Dynamically auto-scale frames and layout when scaling the window."""
+        self.check_responsive_layout(event.size.width)
+
+    def check_responsive_layout(self, width: int) -> None:
+        try:
+            workspace = self.query_one("#workspace")
+            if width < 105:
+                workspace.add_class("stacked")
+            else:
+                workspace.remove_class("stacked")
+
+            top = self.query_one("#topology", TopologyWidget)
+            top.update(top.render_topology_panel())
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------------
     # RESOURCE / ROUTE DATA TABLE
