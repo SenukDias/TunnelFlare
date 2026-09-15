@@ -178,8 +178,8 @@ class AddDNSScreen(ModalScreen[Optional[dict]]):
             yield Input(placeholder="e.g. custom.internal.domain", id="in_host_header")
 
             with Horizontal(classes="buttons"):
-                yield Button("Save & Route", variant="primary", id="btn_save")
-                yield Button("Cancel (Esc)", variant="error", id="btn_cancel")
+                yield Button("💾 Save & Route", variant="primary", id="btn_save")
+                yield Button("✕ Cancel (Esc)", variant="error", id="btn_cancel")
 
     def on_radio_set_changed(self, event: RadioSet.Changed) -> None:
         if event.pressed.id == "rb_cidr":
@@ -304,8 +304,8 @@ class EditDNSScreen(ModalScreen[Optional[dict]]):
             yield Checkbox("Disable TLS Verification", id="chk_no_tls", value=self.no_tls)
 
             with Horizontal(classes="buttons"):
-                yield Button("Update Route", variant="primary", id="btn_save")
-                yield Button("Cancel", variant="error", id="btn_cancel")
+                yield Button("💾 Update Route", variant="primary", id="btn_save")
+                yield Button("✕ Cancel (Esc)", variant="error", id="btn_cancel")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "btn_save":
@@ -743,11 +743,11 @@ class TunnelFlareApp(App):
                 yield Label("🌐 SERVER MODE: INGRESS & PRIVATE ROUTES", id="resources-title", classes="pane-title")
                 yield DataTable(id="resource_table")
                 with Horizontal(id="action-bar"):
-                    yield Button("+ Add Route", id="btn_add", variant="primary")
-                    yield Button("✎ Edit", id="btn_edit", variant="default")
-                    yield Button("✕ Delete", id="btn_remove", variant="error")
-                    yield Button("⚡ Toggle", id="btn_toggle", variant="warning")
-                    yield Button("↺ Restart", id="btn_restart", variant="default")
+                    yield Button("➕ Add Route", id="btn_add", variant="primary")
+                    yield Button("✏️ Edit Route", id="btn_edit", variant="default")
+                    yield Button("🗑️ Delete", id="btn_remove", variant="error")
+                    yield Button("▶ Start Tunnel", id="btn_toggle", variant="success")
+                    yield Button("🔄 Restart", id="btn_restart", variant="default")
 
             with Vertical(id="logs-container"):
                 yield Label("📜 LIVE TUNNEL LOGS  [● AUTO-SCROLL: ON]", id="logs-title", classes="pane-title")
@@ -1073,10 +1073,10 @@ class TunnelFlareApp(App):
         pid = get_tunnel_pid()
         btn = self.query_one("#btn_toggle", Button)
         if pid:
-            btn.label = "⚡ Stop"
+            btn.label = "⏹ Stop Tunnel"
             btn.variant = "error"
         else:
-            btn.label = "⚡ Start"
+            btn.label = "▶ Start Tunnel"
             btn.variant = "success"
 
     def action_toggle_tunnel(self) -> None:
