@@ -703,19 +703,20 @@ class TunnelFlareApp(App):
     }}
 
     #action-bar {{
-        height: 3;
+        height: auto;
         dock: bottom;
         layout: horizontal;
         align: center middle;
         background: {SURFACE_CARD};
         border-top: solid {BORDER_SUBTLE};
-        padding: 0;
+        padding: 0 1;
     }}
 
     #action-bar Button {{
         margin: 0 1;
-        min-width: 12;
-        height: 1;
+        min-width: 8;
+        padding: 0 1;
+        height: 3;
     }}
     """
 
@@ -743,10 +744,10 @@ class TunnelFlareApp(App):
                 yield Label("🌐 SERVER MODE: INGRESS & PRIVATE ROUTES", id="resources-title", classes="pane-title")
                 yield DataTable(id="resource_table")
                 with Horizontal(id="action-bar"):
-                    yield Button("➕ Add Route", id="btn_add", variant="primary")
-                    yield Button("✏️ Edit Route", id="btn_edit", variant="default")
-                    yield Button("🗑️ Delete", id="btn_remove", variant="error")
-                    yield Button("▶ Start Tunnel", id="btn_toggle", variant="success")
+                    yield Button("➕ Add", id="btn_add", variant="primary")
+                    yield Button("✏️ Edit", id="btn_edit", variant="default")
+                    yield Button("🗑️ Del", id="btn_remove", variant="error")
+                    yield Button("▶ Start", id="btn_toggle", variant="success")
                     yield Button("🔄 Restart", id="btn_restart", variant="default")
 
             with Vertical(id="logs-container"):
@@ -1073,10 +1074,10 @@ class TunnelFlareApp(App):
         pid = get_tunnel_pid()
         btn = self.query_one("#btn_toggle", Button)
         if pid:
-            btn.label = "⏹ Stop Tunnel"
+            btn.label = "⏹ Stop"
             btn.variant = "error"
         else:
-            btn.label = "▶ Start Tunnel"
+            btn.label = "▶ Start"
             btn.variant = "success"
 
     def action_toggle_tunnel(self) -> None:
