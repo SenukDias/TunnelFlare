@@ -259,10 +259,6 @@ def setup():
     time.sleep(1)
     step_index += 1
 
-    # 4. Route DNS
-    refresh_interface(step_index)
-    
-    domain = ""
     # 4. Route DNS & Configure Services
     refresh_interface(step_index)
     

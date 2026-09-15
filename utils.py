@@ -11,6 +11,27 @@ def check_cloudflared_installed() -> bool:
     """Check if cloudflared is installed and available in PATH."""
     return shutil.which("cloudflared") is not None
 
+import platform
+
+def get_system_architecture() -> str:
+    """Detect system architecture reliably across Linux distributions."""
+    machine = platform.machine().lower()
+    arch_map = {
+        "x86_64": "amd64",
+        "aarch64": "arm64",
+        "arm64": "arm64",
+        "armv7l": "armhf",
+        "armv6l": "armhf",
+        "i386": "386",
+        "i686": "386",
+    }
+    if machine in arch_map:
+        return arch_map[machine]
+    try:
+        return subprocess.check_output(["dpkg", "--print-architecture"]).decode().strip()
+    except Exception:
+        return machine
+
 def install_cloudflared() -> bool:
     """
     Attempt to install cloudflared on Linux.
@@ -23,7 +44,7 @@ def install_cloudflared() -> bool:
 
     try:
         # Detect architecture
-        arch = subprocess.check_output(["dpkg", "--print-architecture"]).decode().strip()
+        arch = get_system_architecture()
         
         url = ""
         if arch == "amd64":
