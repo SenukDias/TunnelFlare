@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+build_deb/
+build/
+dist/
+*.spec
+*.deb
+.tunnelflare/
