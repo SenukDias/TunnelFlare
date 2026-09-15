@@ -8,6 +8,7 @@ config.yml
 tunnel.log
 tunnel.pid
 *.log
+.tunnelflare/
 
 # Python
 __pycache__/
@@ -17,7 +18,10 @@ venv/
 env/
 dist/
 build/
+build_deb/
 *.egg-info/
+*.spec
+*.deb
 
 # IDEs
 .vscode/
