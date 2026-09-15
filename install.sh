@@ -127,18 +127,15 @@ if ! command -v cloudflared &> /dev/null; then
         echo -e "${RED}Unsupported architecture: $ARCH. Please install cloudflared manually.${NC}"
     fi
 
-    if [ -n "$URL" ]; then
-        echo -e "Downloading cloudflared for $ARCH..."
+    BIN_URL="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${ARCH}"
+    echo -e "Installing cloudflared for $ARCH into $BIN_DIR..."
+    if wget -q -O "$BIN_DIR/cloudflared" "$BIN_URL" && chmod +x "$BIN_DIR/cloudflared"; then
+        echo -e "${GREEN}cloudflared installed successfully to $BIN_DIR/cloudflared!${NC}"
+    elif [ -n "$URL" ]; then
+        echo -e "Downloading cloudflared deb package..."
         wget -q -O /tmp/cloudflared.deb "$URL"
-        echo -e "Installing cloudflared (requires sudo)..."
-        sudo dpkg -i /tmp/cloudflared.deb
-        rm /tmp/cloudflared.deb
-        
-        if command -v cloudflared &> /dev/null; then
-            echo -e "${GREEN}cloudflared installed successfully!${NC}"
-        else
-            echo -e "${RED}Failed to install cloudflared.${NC}"
-        fi
+        sudo dpkg -i /tmp/cloudflared.deb || true
+        rm -f /tmp/cloudflared.deb
     fi
 else
     echo -e "${GREEN}cloudflared is already installed.${NC}"

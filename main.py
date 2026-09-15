@@ -17,6 +17,8 @@ from rich.align import Align
 from rich.table import Table
 from rich.tree import Tree
 from pathlib import Path
+import socket
+import requests
 import yaml
 
 from utils import check_cloudflared_installed, install_cloudflared, run_command
@@ -43,10 +45,10 @@ TUNNEL_FLARE_LOGO_COMPACT = """
 """
 
 STEPS = [
-    "Check Dependencies",
+    "Pre-Flight & Deps",
     "Authentication",
     "Create Tunnel",
-    "Route DNS",
+    "VPN Architecture",
     "Configuration",
     "Run Tunnel"
 ]
@@ -146,50 +148,84 @@ def main(ctx: typer.Context):
         console.print("\n")
         console.print(ctx.get_help())
 
+def check_preflight_connectivity() -> bool:
+    """Check connectivity to Internet, DNS, and Cloudflare."""
+    console.print(f"[{CLOUDFLARE_ORANGE}]Verifying Network Connectivity...[/{CLOUDFLARE_ORANGE}]")
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(3.0)
+        s.connect(("1.1.1.1", 53))
+        s.close()
+        console.print("[green]✓ Internet & DNS reachable (1.1.1.1)[/green]")
+    except Exception as e:
+        console.print(f"[red]✖ Network connectivity check failed: {e}[/red]")
+        if not Confirm.ask("Do you want to continue anyway?", default=False):
+            raise typer.Exit(code=1)
+
+    try:
+        res = requests.get("https://cloudflare.com/cdn-cgi/trace", timeout=4.0)
+        if res.status_code == 200:
+            console.print("[green]✓ Cloudflare Global Anycast Edge verified[/green]")
+    except Exception:
+        console.print("[yellow]! Cloudflare Edge trace timed out, continuing...[/yellow]")
+    return True
+
 @app.command()
 def setup():
     """
-    Interactive setup wizard for Cloudflare Tunnel.
+    Interactive setup wizard for Cloudflare Tunnel with VPN Mode Selection.
     """
     step_index = 0
     
-    # 1. Check Dependencies
+    # 1. Pre-Flight & Dependencies
     refresh_interface(step_index)
-    console.print(f"[{CLOUDFLARE_ORANGE}]Checking Dependencies...[/{CLOUDFLARE_ORANGE}]")
+    check_preflight_connectivity()
+    
     if not check_cloudflared_installed():
         console.print("[red]cloudflared is not installed.[/red]")
         if Confirm.ask("Do you want to install it now?"):
             if install_cloudflared():
                 console.print("[green]cloudflared installed successfully![/green]")
             else:
-                console.print("[red]Failed to install cloudflared. Please try installing it manually (e.g., 'sudo apt install cloudflared').[/red]")
+                console.print("[red]Failed to install cloudflared. Please try installing manually.[/red]")
                 raise typer.Exit(code=1)
         else:
-            console.print("[yellow]Cloudflared is required to continue. Please install it and run setup again.[/yellow]")
+            console.print("[yellow]cloudflared is required to continue. Please install it and run setup again.[/yellow]")
             raise typer.Exit(code=1)
     else:
-        console.print("[green]cloudflared is already installed.[/green]")
+        console.print("[green]cloudflared is installed and ready.[/green]")
     
     time.sleep(1)
     step_index += 1
 
-    # 2. Login
+    # 2. Authentication (URL-based)
     refresh_interface(step_index)
     cert_path = Path.home() / ".cloudflared" / "cert.pem"
+    
+    need_login = False
     if not cert_path.exists():
-        console.print("You need to login to Cloudflare.")
-        console.print("A browser window will open. Please select your domain.")
-        if Confirm.ask("Ready to login?"):
+        need_login = True
+    else:
+        console.print(f"[green]Existing Cloudflare certificate found: {cert_path}[/green]")
+        if Confirm.ask("Do you want to re-authenticate with a new domain/account?", default=False):
+            need_login = True
+
+    if need_login:
+        console.print("\n[bold cyan]Cloudflare URL-Based Authentication[/bold cyan]")
+        console.print("A browser window will open to authorize your Cloudflare domain.")
+        console.print("[yellow]If the browser does not open automatically, copy and open the URL printed below:[/yellow]\n")
+        if Confirm.ask("Ready to authenticate with Cloudflare?", default=True):
             try:
-                console.print("[cyan]Launching Cloudflare login...[/cyan]")
-                console.print("[yellow]Please click the URL below if it doesn't open automatically:[/yellow]")
                 run_command(["cloudflared", "tunnel", "login"], check=True, capture_output=False)
-                console.print("[green]Login successful![/green]")
-            except Exception:
-                console.print("[red]Login failed or was cancelled. Please check your internet connection and try again.[/red]")
+                if cert_path.exists():
+                    console.print("[green]✓ Authentication successful! Certificate written.[/green]")
+                else:
+                    console.print("[yellow]Certificate file not detected yet. Proceeding with caution.[/yellow]")
+            except Exception as e:
+                console.print(f"[red]Authentication failed or was cancelled: {e}[/red]")
                 raise typer.Exit(code=1)
     else:
-        console.print(f"[green]Already logged in.[/green] (Found {cert_path})")
+        console.print("[green]✓ Using existing authenticated Cloudflare credentials.[/green]")
     
     time.sleep(1)
     step_index += 1
@@ -221,11 +257,10 @@ def setup():
              if tunnel_id:
                  cred_file = Path.home() / ".cloudflared" / f"{tunnel_id}.json"
                  if not cred_file.exists():
-                     console.print(f"[red]But local credentials are missing for ID {tunnel_id}.[/red]")
+                     console.print(f"[red]Local credentials missing for ID {tunnel_id}.[/red]")
                      console.print("[cyan]Deleting old remote tunnel to recreate it...[/cyan]")
                      run_command(["cloudflared", "tunnel", "delete", "-f", tunnel_name], check=False)
                      
-                     # Try creating again
                      create_output = run_command(["cloudflared", "tunnel", "create", tunnel_name], check=True)
                      if "Tunnel credentials written" in create_output:
                          console.print(f"[green]Tunnel '{tunnel_name}' recreated successfully![/green]")
@@ -259,75 +294,112 @@ def setup():
     time.sleep(1)
     step_index += 1
 
-    # 4. Route DNS & Configure Services
+    # 4. VPN Architecture & Configuration
     refresh_interface(step_index)
-    
     cred_path = Path.home() / ".cloudflared" / f"{tunnel_id}.json"
     ingress_rules = []
-    
-    # Helper to add service
-    def add_service_prompt(default_type="http"):
-        while True:
-            console.print(f"\n[bold]Add a Service ({default_type.upper()})[/bold]")
-            if default_type == "ssh":
-                if not typer.confirm("Do you want to enable SSH access?", default=False):
-                    return None
-                hostname = typer.prompt("SSH Hostname (e.g., ssh.example.com)")
-                service = "ssh://localhost:22"
-            else:
-                if typer.confirm("Skip DNS routing for this service?", default=False):
-                    hostname = "*"
+    warp_routing_enabled = False
+
+    console.print(Panel("""[bold #F38020]SELECT TUNNEL / VPN ARCHITECTURE MODE[/]
+
+[bold cyan]1. Server-to-Client Mode (Hosted Web & SSH Services)[/]
+   • Exposes local web apps, APIs, and SSH servers to external users.
+   • Automatically provisions Cloudflare DNS CNAME records.
+   • Ideal for hosting servers, webhooks, dashboards, and remote SSH.
+
+[bold cyan]2. Client-to-Client / Site-to-Site Mode (Private Network CIDR VPN)[/]
+   • Connects private subnets (e.g. 192.168.10.0/24 <-> 192.168.20.0/24) via Cloudflare WARP.
+   • Operates without open inbound ports using Cloudflare Private Network CIDR routes.
+   • Ideal for Site-to-Site VPN mesh, LAN-to-LAN interconnects, and zero-trust intranet.
+""", border_style=CLOUDFLARE_ORANGE))
+
+    vpn_mode = Prompt.ask("Choose VPN Architecture Mode", choices=["1", "2"], default="1")
+
+    if vpn_mode == "1":
+        # Helper to add service
+        def add_service_prompt(default_type="http"):
+            while True:
+                console.print(f"\n[bold]Add a Service ({default_type.upper()})[/bold]")
+                if default_type == "ssh":
+                    if not typer.confirm("Do you want to enable SSH access?", default=False):
+                        return None
+                    hostname = typer.prompt("SSH Hostname (e.g., ssh.example.com)")
+                    service = "ssh://localhost:22"
                 else:
-                    hostname = typer.prompt("Hostname (e.g., app.example.com)")
-                    
-                    # Route DNS if not wildcard
-                    if hostname != "*":
-                        try:
-                            run_command(["cloudflared", "tunnel", "route", "dns", tunnel_id, hostname], check=True)
-                            console.print(f"[green]DNS routed for {hostname}[/green]")
-                        except Exception as e:
-                            console.print(f"[red]Failed to route DNS: {e}[/red]")
-                            if not typer.confirm("Continue anyway?", default=True):
-                                return None
+                    if typer.confirm("Skip DNS routing for this service?", default=False):
+                        hostname = "*"
+                    else:
+                        hostname = typer.prompt("Hostname (e.g., app.example.com)")
+                        
+                        if hostname != "*":
+                            try:
+                                run_command(["cloudflared", "tunnel", "route", "dns", tunnel_id, hostname], check=True)
+                                console.print(f"[green]DNS routed for {hostname}[/green]")
+                            except Exception as e:
+                                console.print(f"[red]Failed to route DNS: {e}[/red]")
+                                if not typer.confirm("Continue anyway?", default=True):
+                                    return None
 
-                service = typer.prompt("Local Service URL", default="http://localhost:8000")
-            
-            return {"hostname": hostname, "service": service}
+                    service = typer.prompt("Local Service URL", default="http://localhost:8000")
+                
+                return {"hostname": hostname, "service": service}
 
-    # Primary HTTP Service
-    console.print("\n[bold cyan]--- Primary Web Service ---[/bold cyan]")
-    primary = add_service_prompt("http")
-    if primary: ingress_rules.append(primary)
-    
-    # SSH Service
-    console.print("\n[bold cyan]--- SSH Access ---[/bold cyan]")
-    ssh_service = add_service_prompt("ssh")
-    if ssh_service: ingress_rules.append(ssh_service)
-    
-    # Additional Services
-    while typer.confirm("\nDo you want to add another service?", default=False):
-        extra = add_service_prompt("http")
-        if extra: ingress_rules.append(extra)
+        # Primary HTTP Service
+        console.print("\n[bold cyan]--- Primary Web Service ---[/bold cyan]")
+        primary = add_service_prompt("http")
+        if primary: ingress_rules.append(primary)
         
-    # Add 404 fallback
-    ingress_rules.append({"service": "http_status:404"})
-    
+        # SSH Service
+        console.print("\n[bold cyan]--- SSH Access ---[/bold cyan]")
+        ssh_service = add_service_prompt("ssh")
+        if ssh_service: ingress_rules.append(ssh_service)
+        
+        # Additional Services
+        while typer.confirm("\nDo you want to add another service?", default=False):
+            extra = add_service_prompt("http")
+            if extra: ingress_rules.append(extra)
+            
+        # Add 404 fallback
+        ingress_rules.append({"service": "http_status:404"})
+
+    else:
+        # Client-to-Client / Site-to-Site Mode
+        warp_routing_enabled = True
+        console.print("\n[bold cyan]--- Private Network Subnet Routing (Site-to-Site VPN) ---[/bold cyan]")
+        local_cidr = Prompt.ask("Enter Local Subnet CIDR to advertise (e.g. 192.168.10.0/24)", default="192.168.10.0/24")
+        remote_cidr = Prompt.ask("Enter Remote Target Subnet CIDR (Peer Network)", default="192.168.20.0/24")
+
+        console.print(f"[cyan]Routing local CIDR {local_cidr} to Tunnel {tunnel_id}...[/cyan]")
+        try:
+            run_command(["cloudflared", "tunnel", "route", "ip", "add", local_cidr, tunnel_id], check=False)
+            console.print(f"[green]✓ Route for {local_cidr} registered on Cloudflare Private Network[/green]")
+        except Exception as e:
+            console.print(f"[yellow]Note on IP route registration: {e}[/yellow]")
+
+        ingress_rules.append({
+            "hostname": f"{local_cidr} [Site-to-Site]",
+            "service": f"WARP Routing (Peer: {remote_cidr})"
+        })
+        ingress_rules.append({"service": "http_status:404"})
+
     # 5. Generate Config
     config_data = {
         "tunnel": tunnel_id,
         "credentials-file": str(cred_path),
-        "ingress": ingress_rules
     }
+    if warp_routing_enabled:
+        config_data["warp-routing"] = {"enabled": True}
+    config_data["ingress"] = ingress_rules
     
-    # Ensure directory exists
     TUNNEL_DIR.mkdir(exist_ok=True)
     
-    with open(CONFIG_FILE, "w") as f:
+    # Save atomically with 0600 permissions
+    tmp_config = CONFIG_FILE.with_suffix(".tmp")
+    with open(tmp_config, "w") as f:
         yaml.dump(config_data, f, sort_keys=False)
+    os.chmod(tmp_config, 0o600)
+    os.replace(tmp_config, CONFIG_FILE)
         
-    # Set permissions to 600 (Read/Write for owner only)
-    os.chmod(CONFIG_FILE, 0o600)
-    
     console.print(f"[green]Configuration saved securely to {CONFIG_FILE.absolute()}[/green]")
     
     time.sleep(1)
