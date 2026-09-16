@@ -7,3 +7,4 @@ dist/
 *.spec
 *.deb
 .tunnelflare/
+web/node_modules/
