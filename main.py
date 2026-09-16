@@ -20,6 +20,8 @@ from pathlib import Path
 import socket
 import requests
 import yaml
+from typing import Optional, List, Dict, Any
+from rich import box
 
 from utils import check_cloudflared_installed, install_cloudflared, run_command
 
@@ -27,6 +29,9 @@ app = typer.Typer()
 console = Console()
 
 CLOUDFLARE_ORANGE = "#F38020"
+CYBER_CYAN = "#00E5FF"
+NEON_EMERALD = "#00E676"
+
 TUNNEL_FLARE_LOGO = """
  [bold #F38020]████████╗██╗   ██╗███╗   ██╗███╗   ██╗███████╗██╗     ███████╗██╗      █████╗ ██████╗ ███████╗[/]
  [bold #F38020]╚══██╔══╝██║   ██║████╗  ██║████╗  ██║██╔════╝██║     ██╔════╝██║     ██╔══██╗██╔══██╗██╔════╝[/]
@@ -81,10 +86,11 @@ def get_header(current_step_index: int = -1):
         steps_text.append(f" {prefix}{step} ", style=style)
         if i < len(STEPS) - 1:
             steps_text.append(" → ", style="dim")
-            
-    steps_panel = Panel(Align.center(steps_text), title="Setup Progress", border_style=CLOUDFLARE_ORANGE)
-    
-    return Group(logo_panel, steps_panel)
+    if current_step_index >= 0:
+        steps_panel = Panel(Align.center(steps_text), title="Setup Progress", border_style=CLOUDFLARE_ORANGE)
+        return Group(logo_panel, steps_panel)
+    return logo_panel
+
 
 def refresh_interface(current_step_index: int):
     """Clears screen and prints the header."""
@@ -602,6 +608,231 @@ def web(
         run_web_server(host=host, port=port)
 
 
+# -------------------------------------------------------------
+# Account Sub-App: Cloudflare Zero Trust Authentication
+# -------------------------------------------------------------
+account_app = typer.Typer(help="Manage Cloudflare Zero Trust account credentials and authentication.")
+app.add_typer(account_app, name="account")
+
+
+@account_app.command("login")
+def account_login(
+    token: Optional[str] = typer.Option(None, "--token", "-t", help="Cloudflare Zero Trust API Token"),
+    account_id: Optional[str] = typer.Option(None, "--account-id", "-a", help="Cloudflare Account ID (optional, auto-detected)"),
+    site_name: Optional[str] = typer.Option(None, "--site", "-s", help="Local Site Name / Identifier"),
+):
+    """
+    Authenticate and link your Cloudflare Zero Trust account.
+    """
+    refresh_interface(-1)
+    import cloudflare_api
+
+    if not token:
+        token = Prompt.ask("[bold cyan]Enter Cloudflare Zero Trust API Token[/bold cyan]", password=True)
+    if not token or not token.strip():
+        console.print("[red]Error: API token cannot be empty.[/red]")
+        raise typer.Exit(1)
+
+    console.print("[yellow]Verifying token permissions with Cloudflare...[/yellow]")
+    client = cloudflare_api.CloudflareClient(token=token.strip())
+    try:
+        verify_res = client.verify_token()
+        accounts = client.get_accounts()
+    except cloudflare_api.CloudflareAPIError as e:
+        console.print(f"[red]Authentication failed: {e}[/red]")
+        raise typer.Exit(1)
+
+    if not accounts:
+        console.print("[red]Error: No Cloudflare accounts found with this token.[/red]")
+        raise typer.Exit(1)
+
+    selected_account = accounts[0]
+    if account_id:
+        match = next((a for a in accounts if a.get("id") == account_id), None)
+        if match:
+            selected_account = match
+        else:
+            console.print(f"[yellow]Warning: Account ID '{account_id}' not found in list, using {selected_account.get('id')}[/yellow]")
+
+    acc_id = selected_account.get("id")
+    acc_name = selected_account.get("name", "Primary Account")
+    site = site_name or f"Site-{socket.gethostname()}"
+
+    cloudflare_api.save_account_config(
+        token=token.strip(),
+        account_id=acc_id,
+        account_name=acc_name,
+        site_name=site,
+    )
+
+    console.print(f"[green]Successfully authenticated and linked Cloudflare account![/green]")
+    table = Table(box=box.ROUNDED, border_style=CYBER_CYAN)
+    table.add_column("Property", style="bold white")
+    table.add_column("Value", style="cyan")
+    table.add_row("Account Name", acc_name)
+    table.add_row("Account ID", acc_id)
+    table.add_row("Site Identifier", site)
+    table.add_row("Token Status", verify_res.get("status", "active").upper())
+    console.print(table)
+
+
+@account_app.command("status")
+def account_status():
+    """
+    View currently linked Cloudflare Zero Trust account.
+    """
+    refresh_interface(-1)
+    import cloudflare_api
+
+    cfg = cloudflare_api.load_account_config()
+    if not cfg:
+        console.print("[yellow]No Cloudflare Zero Trust account linked.[/yellow]")
+        console.print("[dim]Run 'tunnelflare account login' or open 'tunnelflare web' to authenticate.[/dim]")
+        return
+
+    table = Table(title="Cloudflare Zero Trust Account", box=box.ROUNDED, border_style=CLOUDFLARE_ORANGE)
+    table.add_column("Key", style="bold white")
+    table.add_column("Value", style="cyan")
+    table.add_row("Account Name", cfg.get("account_name", "Unknown"))
+    table.add_row("Account ID", cfg.get("account_id", "Unknown"))
+    table.add_row("Site Name", cfg.get("site_name", "Unknown"))
+    table.add_row("Credentials Path", str(cloudflare_api.ACCOUNT_FILE))
+
+    client = cloudflare_api.CloudflareClient(token=cfg.get("token"))
+    try:
+        ver = client.verify_token()
+        table.add_row("Token Health", f"[green]VERIFIED ({ver.get('status', 'active').upper()})[/green]")
+    except Exception as e:
+        table.add_row("Token Health", f"[red]INVALID: {e}[/red]")
+
+    console.print(table)
+
+
+@account_app.command("logout")
+def account_logout():
+    """
+    Remove saved Cloudflare Zero Trust credentials.
+    """
+    refresh_interface(-1)
+    import cloudflare_api
+
+    cloudflare_api.clear_account_config()
+    console.print("[green]Cloudflare Zero Trust account configuration removed.[/green]")
+
+
+# -------------------------------------------------------------
+# Mesh Sub-App: Site-to-Site Zero Trust Mesh Routes
+# -------------------------------------------------------------
+mesh_app = typer.Typer(help="Manage Zero Trust site-to-site mesh routes and peers.")
+app.add_typer(mesh_app, name="mesh")
+
+
+@mesh_app.command("list")
+def mesh_list():
+    """
+    List all discovered tunnels and registered CIDR private network routes.
+    """
+    refresh_interface(-1)
+    import cloudflare_api
+
+    cfg = cloudflare_api.load_account_config()
+    if not cfg:
+        console.print("[yellow]Cloudflare account not linked. Run 'tunnelflare account login' first.[/yellow]")
+        return
+
+    client = cloudflare_api.CloudflareClient(token=cfg.get("token"), account_id=cfg.get("account_id"))
+    try:
+        tunnels = client.list_tunnels(is_deleted=False)
+        routes = client.list_routes(is_deleted=False)
+    except cloudflare_api.CloudflareAPIError as e:
+        console.print(f"[red]Failed to query Cloudflare Zero Trust API: {e}[/red]")
+        return
+
+    console.print(f"\n[{CLOUDFLARE_ORANGE}]Discovered Mesh Tunnels ({len(tunnels)}):[/{CLOUDFLARE_ORANGE}]")
+    t_table = Table(box=box.ROUNDED, border_style=CYBER_CYAN)
+    t_table.add_column("Tunnel Name", style="bold white")
+    t_table.add_column("Tunnel ID", style="dim")
+    t_table.add_column("Status", style="green")
+    t_table.add_column("Connections", style="cyan")
+
+    for t in tunnels:
+        conns = t.get("connections", [])
+        colo = conns[0].get("colo_name", "EDGE") if conns else "OFFLINE"
+        status = t.get("status", "inactive")
+        status_color = "green" if status == "healthy" else ("yellow" if status == "degraded" else "red")
+        t_table.add_row(t.get("name", ""), t.get("id", "")[:12] + "...", f"[{status_color}]{status.upper()}[/{status_color}]", f"{len(conns)} active ({colo})")
+    console.print(t_table)
+
+    console.print(f"\n[{NEON_EMERALD}]Registered Private Network CIDR Routes ({len(routes)}):[/{NEON_EMERALD}]")
+    r_table = Table(box=box.ROUNDED, border_style=NEON_EMERALD)
+    r_table.add_column("Subnet CIDR", style="bold green")
+    r_table.add_column("Route ID", style="dim")
+    r_table.add_column("Gateway Tunnel ID", style="cyan")
+    r_table.add_column("Comment / Note", style="white")
+
+    for r in routes:
+        r_table.add_row(r.get("network", ""), r.get("id", "")[:12] + "...", r.get("tunnel_id", "")[:12] + "...", r.get("comment", ""))
+    console.print(r_table)
+
+
+@mesh_app.command("route-add")
+def mesh_route_add(
+    network: str = typer.Argument(..., help="Subnet CIDR to route (e.g. 192.168.20.0/24)"),
+    tunnel_id: Optional[str] = typer.Option(None, "--tunnel", "-t", help="Target tunnel ID (defaults to active local tunnel)"),
+    comment: str = typer.Option("TunnelFlare Mesh Route", "--comment", "-c", help="Route description"),
+):
+    """
+    Register a private subnet CIDR to route through a Cloudflare Tunnel gateway.
+    """
+    refresh_interface(-1)
+    import cloudflare_api
+
+    cfg = cloudflare_api.load_account_config()
+    if not cfg:
+        console.print("[yellow]Cloudflare account not linked. Run 'tunnelflare account login' first.[/yellow]")
+        return
+
+    client = cloudflare_api.CloudflareClient(token=cfg.get("token"), account_id=cfg.get("account_id"))
+    t_id = tunnel_id
+    if not t_id:
+        tunnels = client.list_tunnels(is_deleted=False)
+        if not tunnels:
+            console.print("[red]No active tunnels found in this account.[/red]")
+            return
+        t_id = tunnels[0]["id"]
+        console.print(f"[dim]Auto-selected tunnel: {tunnels[0].get('name')} ({t_id})[/dim]")
+
+    try:
+        res = client.add_cidr_route(network=network, tunnel_id=t_id, comment=comment)
+        console.print(f"[green]Successfully registered CIDR route {network} to tunnel {t_id}![/green]")
+    except cloudflare_api.CloudflareAPIError as e:
+        console.print(f"[red]Failed to add route: {e}[/red]")
+
+
+@mesh_app.command("route-del")
+def mesh_route_del(
+    route_id: str = typer.Argument(..., help="Cloudflare route UUID to revoke"),
+):
+    """
+    Revoke a registered private network CIDR route.
+    """
+    refresh_interface(-1)
+    import cloudflare_api
+
+    cfg = cloudflare_api.load_account_config()
+    if not cfg:
+        console.print("[yellow]Cloudflare account not linked. Run 'tunnelflare account login' first.[/yellow]")
+        return
+
+    client = cloudflare_api.CloudflareClient(token=cfg.get("token"), account_id=cfg.get("account_id"))
+    try:
+        client.delete_cidr_route(route_id=route_id)
+        console.print(f"[green]Successfully deleted route {route_id}![/green]")
+    except cloudflare_api.CloudflareAPIError as e:
+        console.print(f"[red]Failed to delete route: {e}[/red]")
+
+
 if __name__ == "__main__":
+
     app()
 
