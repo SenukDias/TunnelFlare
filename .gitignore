@@ -22,8 +22,8 @@ build_deb/
 *.egg-info/
 *.spec
 *.deb
-
 # IDEs
 .vscode/
 .idea/
 .DS_Store
+web/node_modules/

@@ -12,7 +12,11 @@ const API_BASE = window.location.origin.includes(':5173')
   : window.location.origin;
 
 export const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'canvas' | 'map' | 'routes' | 'account'>('canvas');
+  const queryParams = new URLSearchParams(window.location.search);
+  const initialTab = (queryParams.get('tab') as 'canvas' | 'map' | 'routes' | 'account') || 'canvas';
+  const initialModal = queryParams.get('modal') === 'connect';
+
+  const [activeTab, setActiveTab] = useState<'canvas' | 'map' | 'routes' | 'account'>(initialTab);
   const [nodeStatus, setNodeStatus] = useState<NodeStatus | null>(null);
   const [meshNodes, setMeshNodes] = useState<MeshNode[]>([]);
   const [meshLinks, setMeshLinks] = useState<MeshLink[]>([]);
@@ -20,7 +24,8 @@ export const App: React.FC = () => {
   const [telemetry, setTelemetry] = useState<TelemetryData | null>(null);
 
   // Modals
-  const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
+  const [isConnectModalOpen, setIsConnectModalOpen] = useState(initialModal);
+
   const [connectSource, setConnectSource] = useState<MeshNode | null>(null);
   const [connectTarget, setConnectTarget] = useState<MeshNode | null>(null);
 
