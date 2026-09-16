@@ -1,0 +1,321 @@
+/* =========================================================
+   TunnelFlare Modern Design System & CSS Tokens
+   Theme: Obsidian Cyberpunk Zero Trust Mesh
+   ========================================================= */
+
+:root {
+  --bg-base: #060911;
+  --bg-surface: #0d1527;
+  --bg-surface-elevated: #131e36;
+  --bg-surface-glass: rgba(13, 21, 39, 0.85);
+  
+  --border-subtle: #1b2947;
+  --border-highlight: #283e6b;
+  --border-glow: rgba(0, 229, 255, 0.35);
+
+  --cf-orange: #f38020;
+  --cf-orange-light: #faad3f;
+  --cf-orange-glow: rgba(243, 128, 32, 0.25);
+
+  --cyan: #00e5ff;
+  --cyan-glow: rgba(0, 229, 255, 0.25);
+
+  --emerald: #00e676;
+  --emerald-glow: rgba(0, 230, 118, 0.25);
+
+  --purple: #a855f7;
+  --purple-glow: rgba(168, 85, 247, 0.25);
+
+  --amber: #ffb300;
+  --rose: #ff3366;
+
+  --text-main: #f8fafc;
+  --text-muted: #94a3b8;
+  --text-dim: #64748b;
+
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  --shadow-card: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.4);
+  --shadow-glow-cyan: 0 0 25px rgba(0, 229, 255, 0.2);
+  --shadow-glow-orange: 0 0 25px rgba(243, 128, 32, 0.2);
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-full: 9999px;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--bg-base);
+  color: var(--text-main);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  background-image: 
+    radial-gradient(circle at 15% 15%, rgba(0, 229, 255, 0.04) 0%, transparent 40%),
+    radial-gradient(circle at 85% 85%, rgba(243, 128, 32, 0.04) 0%, transparent 40%);
+  min-height: 100vh;
+}
+
+code, pre, .mono {
+  font-family: var(--font-mono);
+}
+
+/* Animations */
+@keyframes pulseGlow {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(1.1); }
+}
+
+@keyframes radarWave {
+  0% { transform: scale(0.6); opacity: 0.8; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+
+@keyframes dataFlow {
+  0% { stroke-dashoffset: 24; }
+  100% { stroke-dashoffset: 0; }
+}
+
+/* Scrollbars */
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-base);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-subtle);
+  border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-highlight);
+}
+
+/* Glassmorphism Panels */
+.glass-panel {
+  background: var(--bg-surface-glass);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+}
+
+.glass-panel-elevated {
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-highlight);
+  border-radius: var(--radius-md);
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.55rem 1.1rem;
+  border-radius: var(--radius-md);
+  font-family: var(--font-sans);
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid transparent;
+  outline: none;
+  user-select: none;
+}
+
+.btn:active {
+  transform: scale(0.98);
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--cf-orange), #ea580c);
+  color: #fff;
+  box-shadow: 0 4px 14px var(--cf-orange-glow);
+}
+
+.btn-primary:hover {
+  background: linear-gradient(135deg, var(--cf-orange-light), var(--cf-orange));
+  box-shadow: 0 6px 20px rgba(243, 128, 32, 0.4);
+}
+
+.btn-secondary {
+  background: var(--bg-surface-elevated);
+  color: var(--text-main);
+  border-color: var(--border-highlight);
+}
+
+.btn-secondary:hover {
+  background: #192745;
+  border-color: var(--cyan);
+  color: var(--cyan);
+}
+
+.btn-cyan {
+  background: linear-gradient(135deg, #00b0ff, var(--cyan));
+  color: #060911;
+  font-weight: 700;
+  box-shadow: 0 4px 14px var(--cyan-glow);
+}
+
+.btn-cyan:hover {
+  filter: brightness(1.15);
+  box-shadow: 0 6px 22px rgba(0, 229, 255, 0.45);
+}
+
+.btn-danger {
+  background: rgba(255, 51, 102, 0.12);
+  color: var(--rose);
+  border-color: rgba(255, 51, 102, 0.3);
+}
+
+.btn-danger:hover {
+  background: var(--rose);
+  color: #fff;
+}
+
+/* Form Inputs */
+.input-field {
+  width: 100%;
+  background: var(--bg-base);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 0.65rem 0.85rem;
+  color: var(--text-main);
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  outline: none;
+}
+
+.input-field:focus {
+  border-color: var(--cyan);
+  box-shadow: 0 0 0 3px rgba(0, 229, 255, 0.15);
+}
+
+/* Badges */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: var(--radius-full);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.badge-emerald {
+  background: rgba(0, 230, 118, 0.12);
+  color: var(--emerald);
+  border: 1px solid rgba(0, 230, 118, 0.3);
+}
+
+.badge-cyan {
+  background: rgba(0, 229, 255, 0.12);
+  color: var(--cyan);
+  border: 1px solid rgba(0, 229, 255, 0.3);
+}
+
+.badge-orange {
+  background: rgba(243, 128, 32, 0.12);
+  color: var(--cf-orange);
+  border: 1px solid rgba(243, 128, 32, 0.3);
+}
+
+.badge-purple {
+  background: rgba(168, 85, 247, 0.12);
+  color: var(--purple);
+  border: 1px solid rgba(168, 85, 247, 0.3);
+}
+
+/* Modal Backdrop & Dialog */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 7, 15, 0.8);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1rem;
+}
+
+.modal-content {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-highlight);
+  border-radius: var(--radius-lg);
+  width: 100%;
+  max-width: 540px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+  overflow: hidden;
+}
+
+/* React Flow Styling Overrides for Dark Mode */
+.react-flow__background {
+  background-color: var(--bg-base) !important;
+}
+
+.react-flow__controls {
+  background: var(--bg-surface-elevated) !important;
+  border: 1px solid var(--border-subtle) !important;
+  border-radius: var(--radius-md) !important;
+  box-shadow: var(--shadow-card) !important;
+}
+
+.react-flow__controls-button {
+  background: transparent !important;
+  border-bottom: 1px solid var(--border-subtle) !important;
+  fill: var(--text-muted) !important;
+}
+
+.react-flow__controls-button:hover {
+  background: var(--border-subtle) !important;
+  fill: var(--cyan) !important;
+}
+
+.react-flow__edge-path {
+  stroke: var(--cyan) !important;
+  stroke-width: 2.5 !important;
+  stroke-dasharray: 6 4 !important;
+  animation: dataFlow 1.2s linear infinite !important;
+}
+
+/* Leaflet Map Dark Tile Filter */
+.leaflet-container {
+  background-color: var(--bg-base) !important;
+  font-family: var(--font-sans) !important;
+}
+
+.leaflet-tile-pane {
+  filter: brightness(0.85) invert(1) contrast(1.2) hue-rotate(200deg) saturate(0.65);
+}
+
+.leaflet-popup-content-wrapper {
+  background: var(--bg-surface) !important;
+  color: var(--text-main) !important;
+  border: 1px solid var(--border-highlight) !important;
+  border-radius: var(--radius-md) !important;
+  box-shadow: var(--shadow-card) !important;
+}
+
+.leaflet-popup-tip {
+  background: var(--bg-surface) !important;
+}
