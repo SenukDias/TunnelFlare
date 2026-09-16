@@ -1017,7 +1017,7 @@ class TunnelFlareApp(App):
                 self.notify(f"Routing DNS for {endpoint}...")
                 try:
                     subprocess.run(
-                        ["cloudflared", "tunnel", "route", "dns", tunnel_id, endpoint],
+                        ["cloudflared", "tunnel", "route", "dns", "--overwrite-dns", tunnel_id, endpoint],
                         check=True,
                         capture_output=True,
                         text=True

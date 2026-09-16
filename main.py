@@ -339,7 +339,7 @@ def setup():
                         
                         if hostname != "*":
                             try:
-                                run_command(["cloudflared", "tunnel", "route", "dns", tunnel_id, hostname], check=True)
+                                run_command(["cloudflared", "tunnel", "route", "dns", "--overwrite-dns", tunnel_id, hostname], check=True)
                                 console.print(f"[green]DNS routed for {hostname}[/green]")
                             except Exception as e:
                                 console.print(f"[red]Failed to route DNS: {e}[/red]")
