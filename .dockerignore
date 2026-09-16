@@ -1,0 +1,7 @@
+.git
+.venv
+__pycache__
+*.pyc
+*.deb
+.tunnelflare_backup
+web/node_modules

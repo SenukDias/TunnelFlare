@@ -563,5 +563,45 @@ def reset():
     
     console.print("\n[green]Reset complete.[/green]")
 
+
+@app.command()
+def web(
+    host: str = typer.Option("0.0.0.0", "--host", "-h", help="Host interface to bind the web server"),
+    port: int = typer.Option(8080, "--port", "-p", help="Port to listen on"),
+    daemon: bool = typer.Option(False, "--daemon", "-d", help="Run web server as a background daemon"),
+):
+    """
+    Launch the TunnelFlare Hybrid Web Mesh Dashboard (React Flow canvas & map UI).
+    """
+    refresh_interface(-1)
+    console.print(f"[{CLOUDFLARE_ORANGE}]Starting TunnelFlare Web Mesh Control Plane...[/{CLOUDFLARE_ORANGE}]")
+    console.print(f"[bold cyan]Local Dashboard:[/]  http://localhost:{port}")
+    if host == "0.0.0.0":
+        primary_ip = None
+        for iface in utils.get_active_interfaces():
+            if iface.get("is_up") and iface.get("primary_ip"):
+                primary_ip = iface["primary_ip"].split("/")[0]
+                break
+        if primary_ip:
+            console.print(f"[bold cyan]Network Access:[/]   http://{primary_ip}:{port}")
+    console.print(f"[dim]Interactive REST API & OpenAPI Docs:[/] http://localhost:{port}/docs\n")
+
+    from web_server import run_web_server
+    if daemon:
+        import subprocess
+        log_file = TUNNEL_DIR / "web.log"
+        with open(log_file, "a") as out:
+            proc = subprocess.Popen(
+                [sys.executable, "-m", "uvicorn", "web_server:app", "--host", host, "--port", str(port)],
+                stdout=out,
+                stderr=out,
+                start_new_session=True,
+            )
+        console.print(f"[green]Web server running in background (PID: {proc.pid}). Logs: {log_file}[/green]")
+    else:
+        run_web_server(host=host, port=port)
+
+
 if __name__ == "__main__":
     app()
+

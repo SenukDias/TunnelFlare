@@ -4,3 +4,6 @@ shellingham
 PyYAML
 textual
 requests
+fastapi
+uvicorn[standard]
+pydantic

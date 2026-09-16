@@ -1,0 +1,27 @@
+version: "3.8"
+
+services:
+  tunnelflare-mesh:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tunnelflare-mesh
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    sysctls:
+      - net.ipv4.ip_forward=1
+    volumes:
+      - ~/.tunnelflare:/root/.tunnelflare
+      - ~/.cloudflared:/root/.cloudflared
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      - tunnelflare-net
+
+networks:
+  tunnelflare-net:
+    driver: bridge
