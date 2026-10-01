@@ -181,25 +181,36 @@ EOF
 chmod +x "$INSTALL_DIR/tunnelflare"
 
 # 7. Link to PATH
-mkdir -p "$BIN_DIR"
-ln -sf "$INSTALL_DIR/tunnelflare" "$BIN_DIR/tunnelflare"
+echo -e "Creating system command 'tunnelflare'..."
+if [ -w "/usr/local/bin" ]; then
+    ln -sf "$INSTALL_DIR/tunnelflare" "/usr/local/bin/tunnelflare"
+elif command -v sudo &> /dev/null; then
+    echo -e "${CYAN}Requesting sudo permissions to link /usr/local/bin/tunnelflare globally...${NC}"
+    sudo ln -sf "$INSTALL_DIR/tunnelflare" "/usr/local/bin/tunnelflare" < /dev/tty || true
+fi
 
-# 8. Check PATH
-if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
-    echo -e "${ORANGE}Warning: $BIN_DIR is not in your PATH.${NC}"
-    SHELL_RC=""
-    if [ -n "$BASH_VERSION" ] || [ -n "$BASH" ]; then
-        SHELL_RC="$HOME/.bashrc"
-    elif [ -n "$ZSH_VERSION" ] || [ -n "$ZSH_NAME" ]; then
-        SHELL_RC="$HOME/.zshrc"
-    fi
+# 8. Check PATH (Fallback to local bin if global fails)
+if [ ! -f "/usr/local/bin/tunnelflare" ]; then
+    echo -e "${ORANGE}Global link failed or skipped. Falling back to local bin...${NC}"
+    mkdir -p "$BIN_DIR"
+    ln -sf "$INSTALL_DIR/tunnelflare" "$BIN_DIR/tunnelflare"
 
-    if [ -n "$SHELL_RC" ] && [ -f "$SHELL_RC" ]; then
-        echo "" >> "$SHELL_RC"
-        echo "# TunnelFlare PATH" >> "$SHELL_RC"
-        echo "export PATH=\"\$PATH:$BIN_DIR\"" >> "$SHELL_RC"
-        echo -e "${GREEN}Added to $SHELL_RC.${NC}"
-        echo -e "${ORANGE}Please restart your terminal or run: source $SHELL_RC${NC}"
+    if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
+        echo -e "${ORANGE}Warning: $BIN_DIR is not in your PATH.${NC}"
+        SHELL_RC=""
+        if [ -n "$BASH_VERSION" ] || [ -n "$BASH" ]; then
+            SHELL_RC="$HOME/.bashrc"
+        elif [ -n "$ZSH_VERSION" ] || [ -n "$ZSH_NAME" ]; then
+            SHELL_RC="$HOME/.zshrc"
+        fi
+
+        if [ -n "$SHELL_RC" ] && [ -f "$SHELL_RC" ]; then
+            echo "" >> "$SHELL_RC"
+            echo "# TunnelFlare PATH" >> "$SHELL_RC"
+            echo "export PATH=\"\$PATH:$BIN_DIR\"" >> "$SHELL_RC"
+            echo -e "${GREEN}Added to $SHELL_RC.${NC}"
+            echo -e "${ORANGE}Please restart your terminal or run: source $SHELL_RC${NC}"
+        fi
     fi
 fi
 
