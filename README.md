@@ -43,23 +43,27 @@
 
 ## 📸 Screenshots
 
-### 1. Interactive P2P Flow Canvas
+### 1. Web Mesh Topology Canvas (`React Flow`)
+Draggable node-link topology with live latency badges, MAC addresses, and drag-and-drop routing handles:
+![Web Mesh Canvas](resources/dashboard.png)
+
+### 2. Interactive P2P Flow Canvas
 A visually stunning, draggable topology canvas where sites are represented as modular cards with active status indicators.
 ![Flow Canvas](resources/tunnelflare_flow_canvas_refined_1790853513800.jpg)
 
-### 2. Node Details & Configuration Modal
+### 3. Node Details & Configuration Modal
 Drill down into specific site nodes to view telemetry (Latency, Jitter) and configure granular mesh routes.
 ![Node Details Modal](resources/tunnelflare_node_details_modal_1790851783987.jpg)
 
-### 3. Edge Interaction & Routing
+### 4. Edge Interaction & Routing
 Easily establish encrypted Zero Trust routes by dragging connections between site subnets.
 ![Node Interaction](resources/tunnelflare_node_interaction_refined_1790853555821.jpg)
 
-### 4. Dynamic Topology States
+### 5. Dynamic Topology States
 Monitor mesh health in real-time with responsive visual states (Healthy, Degraded, Offline) for nodes and flight arcs.
 ![Topology States](resources/tunnelflare_topology_states_1790853660426.jpg)
 
-### 5. Peer-to-Peer UI Dashboard
+### 6. Peer-to-Peer UI Dashboard
 A fully modernized, dark-themed dashboard overview of your global mesh network.
 ![P2P UI Mockup](resources/tunnelflare_p2p_ui_mockup_1790851727352.jpg)
 
