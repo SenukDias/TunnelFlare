@@ -79,6 +79,13 @@ fi
 mkdir -p "$INSTALL_DIR"
 
 # 2. Copy Code & Web Assets
+if [ ! -f "$REPO_DIR/main.py" ]; then
+    echo -e "${CYAN}Running from remote script. Downloading TunnelFlare repository...${NC}"
+    rm -rf /tmp/tunnelflare_repo
+    git clone https://github.com/SenukDias/TunnelFlare.git /tmp/tunnelflare_repo
+    REPO_DIR="/tmp/tunnelflare_repo"
+fi
+
 echo -e "Copying application files..."
 cp "$REPO_DIR"/main.py "$INSTALL_DIR/"
 cp "$REPO_DIR"/tui.py "$INSTALL_DIR/"
