@@ -85,6 +85,8 @@ cp "$REPO_DIR"/tui.py "$INSTALL_DIR/"
 cp "$REPO_DIR"/utils.py "$INSTALL_DIR/"
 cp "$REPO_DIR"/cloudflare_api.py "$INSTALL_DIR/"
 cp "$REPO_DIR"/web_server.py "$INSTALL_DIR/"
+cp "$REPO_DIR"/log_parser.py "$INSTALL_DIR/"
+cp "$REPO_DIR"/healing_engine.py "$INSTALL_DIR/"
 cp "$REPO_DIR"/requirements.txt "$INSTALL_DIR/"
 
 if [ -d "$REPO_DIR/resources" ]; then

@@ -12,6 +12,8 @@
   "dependencies": {
     "@types/leaflet": "^1.9.22",
     "@xyflow/react": "^12.11.6",
+    "framer-motion": "^11.18.2",
+    "html-to-image": "^1.11.13",
     "leaflet": "^1.9.4",
     "lucide-react": "^1.46.0",
     "react": "^19.2.8",

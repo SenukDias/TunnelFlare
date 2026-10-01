@@ -1,4 +1,5 @@
 import os
+import re
 import signal
 import socket
 import subprocess
@@ -17,6 +18,9 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical
 from textual.screen import ModalScreen
+
+from healing_engine import HealingEngine, HealthFSMState
+from log_parser import LogParser, ParsedLogEvent, resolve_pop_name
 from textual.widgets import (
     Button,
     Checkbox,
@@ -673,6 +677,129 @@ class TopologyWidget(Static):
 
 
 # ============================================================================
+# STAGE OBSERVABILITY & 4-EDGE CONNECTION HUD WIDGET
+# ============================================================================
+
+class StageHUDWidget(Static):
+    """
+    Split-Deck HUD Widget for Cloudflare Edge Observability.
+    Displays:
+    1. Stage 1: Pre-flight readiness pills (DNS, UDP/QUIC, TCP/H2, API, Protocol).
+    2. Stage 2: Active 4-Edge Connection Grid with real Anycast IPs, PoPs, protocols, and states.
+    3. Stage 3: Autonomous Healing FSM state, circuit breaker, and recent actions.
+    """
+
+    def render(self) -> Panel:
+        try:
+            app = self.app
+        except Exception:
+            app = None
+
+        parser: Optional[LogParser] = getattr(self, "custom_parser", getattr(app, "log_parser", None))
+        healer: Optional[HealingEngine] = getattr(self, "custom_healer", getattr(app, "healing_engine", None))
+
+        if not parser or not healer:
+            return Panel(Text("Initializing Observability HUD...", style="dim"), border_style=BORDER_SUBTLE)
+
+        # STAGE 1: PRE-FLIGHT READINESS PILLS
+        def format_pill(status: str) -> str:
+            if status == "pass":
+                return "[bold white on #00E676] PASS ✔ [/]"
+            elif status == "fail":
+                return "[bold white on #FF1744] FAIL ✖ [/]"
+            return "[dim #888888] PENDING ○ [/]"
+
+        precheck = parser.precheck
+        proto_badge = f"[bold black on {ACCENT_CYAN}] {precheck.suggested_protocol.upper()} [/]"
+        precheck_line = (
+            f" 📡 [bold white]STAGE 1 (PRECHECK):[/] "
+            f"DNS: {format_pill(precheck.dns)}  "
+            f"UDP(QUIC): {format_pill(precheck.udp_quic)}  "
+            f"TCP(H2): {format_pill(precheck.tcp_h2)}  "
+            f"API: {format_pill(precheck.cf_api)}  "
+            f"Proto: {proto_badge}"
+        )
+
+        # STAGE 2: ACTIVE 4-EDGE CONNECTION MATRIX
+        edge_table = Table.grid(expand=True, padding=(0, 1))
+        edge_table.add_column(justify="left", ratio=1)
+        edge_table.add_column(justify="left", ratio=4)
+        edge_table.add_column(justify="left", ratio=3)
+        edge_table.add_column(justify="center", ratio=2)
+        edge_table.add_column(justify="right", ratio=2)
+
+        edge_table.add_row(
+            Text("Slot", style="bold cyan"),
+            Text("Anycast IP Address", style="bold cyan"),
+            Text("Edge PoP Location", style="bold cyan"),
+            Text("Proto", style="bold cyan"),
+            Text("State", style="bold cyan"),
+        )
+
+        for i in range(4):
+            conn = parser.connections.get(i)
+            if not conn:
+                continue
+
+            slot_str = f"#{conn.conn_index}"
+            ip_str = conn.ip if conn.ip else "Connecting..."
+            loc_str = resolve_pop_name(conn.location)
+            proto_str = conn.protocol.upper()
+
+            if conn.status == "ACTIVE":
+                status_text = Text("ACTIVE ●", style="bold #00E676")
+                ip_style = "bold white"
+            elif conn.status in ("CONNECTING", "HANDSHAKING"):
+                status_text = Text("CONNECTING ◌", style="bold #FFD600")
+                ip_style = "dim cyan"
+            else:
+                status_text = Text("OFFLINE ✖", style="bold #FF1744")
+                ip_style = "dim red"
+
+            edge_table.add_row(
+                Text(slot_str, style="bold white"),
+                Text(ip_str, style=ip_style),
+                Text(loc_str, style="bold #00E5FF" if conn.status == "ACTIVE" else "dim white"),
+                Text(proto_str, style="bold #F38020"),
+                status_text,
+            )
+
+        # STAGE 3: AUTONOMOUS HEALING STATUS STRIP
+        h_status = healer.get_healer_status()
+        if h_status["circuit_tripped"]:
+            heal_badge = "[bold white on #FF1744] TRIPPED ✖ [/]"
+        elif h_status["is_armed"]:
+            heal_badge = "[bold white on #00E676] ARMED ● [/]"
+        else:
+            heal_badge = "[bold black on #FFD600] PAUSED ⏸ [/]"
+
+        active_count = parser.get_active_count()
+        health_color = "#00E676" if active_count == 4 else ("#FFD600" if active_count > 0 else "#FF1744")
+        fsm_text = f"[{health_color}]{h_status['fsm_state']} ({active_count}/4 Conns)[/]"
+
+        healer_line = (
+            f" 🛡️ [bold white]AIOps Healer:[/] {heal_badge} │ "
+            f"Health: [bold]{fsm_text}[/] │ "
+            f"Last Remediation: [dim white]{h_status['last_action_str']}[/]"
+        )
+
+        hud_table = Table.grid(expand=True, padding=0)
+        hud_table.add_column(justify="left")
+        hud_table.add_row(Text.from_markup(precheck_line))
+        hud_table.add_row(Text("─" * 60, style="dim #2D3142"))
+        hud_table.add_row(edge_table)
+        hud_table.add_row(Text("─" * 60, style="dim #2D3142"))
+        hud_table.add_row(Text.from_markup(healer_line))
+
+        return Panel(
+            hud_table,
+            title="[bold #00E5FF]📡 STAGE 1 & 2: PRE-FLIGHT & ACTIVE 4-EDGE MATRIX[/]",
+            border_style=BORDER_SUBTLE,
+            padding=(0, 1),
+        )
+
+
+# ============================================================================
 # MAIN APPLICATION
 # ============================================================================
 
@@ -771,6 +898,31 @@ class TunnelFlareApp(App):
         scrollbar-color: {ACCENT_CYAN} {SLATE_DARK};
     }}
 
+    #stage-hud-container {{
+        height: auto;
+        min-height: 8;
+        max-height: 12;
+        margin-bottom: 0;
+        background: {SURFACE_CARD};
+    }}
+
+    #log-mode-bar {{
+        height: 1;
+        background: {SLATE_DARK};
+        padding: 0 1;
+        border-top: solid {BORDER_SUBTLE};
+        border-bottom: solid {BORDER_SUBTLE};
+    }}
+
+    #log-mode-label {{
+        color: {ELECTRIC_AMBER};
+        text-style: bold;
+    }}
+
+    .hidden {{
+        display: none;
+    }}
+
     #action-bar {{
         height: auto;
         dock: bottom;
@@ -796,6 +948,10 @@ class TunnelFlareApp(App):
         Binding("d", "remove_dns", "Delete Selected"),
         Binding("s", "toggle_tunnel", "Start/Stop"),
         Binding("r", "restart_tunnel", "Restart"),
+        Binding("tab", "toggle_log_mode", "Toggle Curated/Raw", priority=True),
+        Binding("v", "toggle_log_mode", "Toggle Curated/Raw"),
+        Binding("h", "toggle_auto_heal", "Auto-Heal"),
+        Binding("f", "force_heal", "Force Heal"),
         Binding("space", "toggle_autoscroll", "Auto-Scroll Toggle"),
         Binding("c", "clear_logs", "Clear Logs"),
     ]
@@ -803,6 +959,16 @@ class TunnelFlareApp(App):
     # Live Log Stream Tracking
     last_log_offset = 0
     auto_scroll_enabled = True
+    view_mode = "curated"
+
+    def __init__(self):
+        super().__init__()
+        self.log_parser = LogParser()
+        self.healing_engine = HealingEngine(
+            parser=self.log_parser,
+            restart_callback=self.heal_restart_callback,
+            notify_callback=lambda msg, sev: self.notify(msg, severity=sev),
+        )
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -820,8 +986,13 @@ class TunnelFlareApp(App):
                     yield Button("🔄 Restart", id="btn_restart", variant="default")
 
             with Vertical(id="logs-container"):
-                yield Label("📜 LIVE TUNNEL LOGS  [● AUTO-SCROLL: ON]", id="logs-title", classes="pane-title")
-                yield RichLog(id="log_view", wrap=True, highlight=True, markup=True)
+                yield Label("🛡️ CLOUDFLARE EDGE OBSERVABILITY & LOGS [AUTO-HEAL: ARMED 🟢]", id="logs-title", classes="pane-title")
+                with Container(id="stage-hud-container"):
+                    yield StageHUDWidget(id="stage_hud")
+                with Horizontal(id="log-mode-bar"):
+                    yield Label("📋 [TAB/V] MODE: CURATED STAGE STREAM  │  [H] HEAL: ARMED  │  [SPACE] SCROLL: ON", id="log-mode-label")
+                yield RichLog(id="curated_log_view", wrap=True, highlight=False, markup=True)
+                yield RichLog(id="raw_log_view", wrap=True, highlight=True, markup=True, classes="hidden")
 
         yield Footer()
 
@@ -901,23 +1072,34 @@ class TunnelFlareApp(App):
     # ------------------------------------------------------------------------
 
     def init_log_stream(self) -> None:
-        log_view = self.query_one(RichLog)
+        curated_view = self.query_one("#curated_log_view", RichLog)
+        raw_view = self.query_one("#raw_log_view", RichLog)
+
         if not LOG_FILE.exists():
-            log_view.write("[dim]Log file not found yet. Start tunnel to stream logs...[/dim]")
+            curated_view.write("[dim]Log file not found yet. Start tunnel to stream logs...[/dim]")
+            raw_view.write("[dim]Log file not found yet. Start tunnel to stream logs...[/dim]")
             return
 
         try:
             with open(LOG_FILE, "r", encoding="utf-8", errors="replace") as f:
                 f.seek(0, 2)
                 file_size = f.tell()
-                # Read last 4KB for initial view
-                f.seek(max(0, file_size - 4096))
+                # Read last 12KB for initial view
+                f.seek(max(0, file_size - 12288))
                 initial_lines = f.readlines()
                 self.last_log_offset = f.tell()
 
+            tunnel_running = get_tunnel_pid() is not None
             for line in initial_lines:
-                formatted = self.format_log_line(line.rstrip())
-                log_view.write(formatted)
+                clean_line = line.rstrip()
+                if clean_line:
+                    event = self.log_parser.parse_line(clean_line)
+                    if event:
+                        self.healing_engine.process_event(event, tunnel_running)
+                        curated_view.write(self.format_curated_event(event))
+                    raw_view.write(self.format_log_line(clean_line))
+
+            self.query_one("#stage_hud", StageHUDWidget).refresh()
         except Exception:
             pass
 
@@ -925,7 +1107,9 @@ class TunnelFlareApp(App):
         if not LOG_FILE.exists():
             return
 
-        log_view = self.query_one(RichLog)
+        curated_view = self.query_one("#curated_log_view", RichLog)
+        raw_view = self.query_one("#raw_log_view", RichLog)
+
         try:
             with open(LOG_FILE, "r", encoding="utf-8", errors="replace") as f:
                 f.seek(self.last_log_offset)
@@ -934,17 +1118,62 @@ class TunnelFlareApp(App):
                     return
                 self.last_log_offset = f.tell()
 
+            tunnel_running = get_tunnel_pid() is not None
+            has_new = False
             for line in new_text.splitlines():
                 if line.strip():
-                    log_view.write(self.format_log_line(line))
+                    has_new = True
+                    event = self.log_parser.parse_line(line)
+                    if event:
+                        self.healing_engine.process_event(event, tunnel_running)
+                        curated_view.write(self.format_curated_event(event))
+                    raw_view.write(self.format_log_line(line))
+
+            if has_new:
+                self.query_one("#stage_hud", StageHUDWidget).refresh()
 
             if self.auto_scroll_enabled:
-                log_view.scroll_end(animate=False)
+                if self.view_mode == "curated":
+                    curated_view.scroll_end(animate=False)
+                else:
+                    raw_view.scroll_end(animate=False)
         except Exception:
             pass
 
+    def format_curated_event(self, event: ParsedLogEvent) -> Text:
+        """Render high-contrast, stage-badged log line."""
+        txt = Text()
+        stage_styles = {
+            "PRECHECK": ("bold black on #00E5FF", "[PRECHECK]"),
+            "CRYPTO": ("bold white on #A855F7", "[CRYPTO]  "),
+            "EDGE_REG": ("bold black on #00E676", "[EDGE-REG]"),
+            "TRAFFIC": ("bold black on #FFD600", "[TRAFFIC] "),
+            "HEALER": ("bold white on #F38020", "[HEALER]  "),
+            "ERROR": ("bold white on #FF1744", "[ERROR]   "),
+            "SYSTEM": ("bold white on #2D3142", "[SYSTEM]  "),
+        }
+
+        badge_style, badge_text = stage_styles.get(event.stage, ("dim cyan", f"[{event.stage[:8]}]"))
+        time_match = re.search(r"(\d{2}:\d{2}:\d{2})", event.timestamp)
+        ts = time_match.group(1) if time_match else event.timestamp[-8:]
+        txt.append(f"{ts} ", style="dim #888888")
+        txt.append(f"{badge_text} ", style=badge_style)
+
+        if event.stage == "ERROR" or event.level == "ERR":
+            txt.append(event.message, style="bold #FF5252")
+        elif event.stage == "EDGE_REG":
+            txt.append(event.message, style="bold #80D8FF")
+        elif event.stage == "HEALER":
+            txt.append(event.message, style="bold #FFD600")
+        elif event.stage == "PRECHECK":
+            txt.append(event.message, style="#E0F7FA")
+        else:
+            txt.append(event.message, style="white")
+
+        return txt
+
     def format_log_line(self, raw_line: str) -> Text:
-        """Apply high-contrast syntax highlighting to log messages."""
+        """Apply high-contrast syntax highlighting to raw log messages."""
         txt = Text()
         lower = raw_line.lower()
 
@@ -965,20 +1194,67 @@ class TunnelFlareApp(App):
         txt.append(raw_line, style=body_style)
         return txt
 
+    def action_toggle_log_mode(self) -> None:
+        """Toggle between Curated Stage Logs and Raw Daemon Logs."""
+        curated_view = self.query_one("#curated_log_view", RichLog)
+        raw_view = self.query_one("#raw_log_view", RichLog)
+
+        if self.view_mode == "curated":
+            self.view_mode = "raw"
+            curated_view.add_class("hidden")
+            raw_view.remove_class("hidden")
+            self.notify("Switched to Raw Daemon Log Stream (~/.tunnelflare/tunnel.log)", severity="information")
+        else:
+            self.view_mode = "curated"
+            curated_view.remove_class("hidden")
+            raw_view.add_class("hidden")
+            self.notify("Switched to Curated Stage Log Stream", severity="information")
+
+        self.update_log_mode_label()
+
+    def action_toggle_auto_heal(self) -> None:
+        """Toggle Autonomous Healing between ARMED and PAUSED."""
+        self.healing_engine.set_armed(not self.healing_engine.is_armed)
+        armed = self.healing_engine.is_armed
+        self.notify(f"Autonomous Healing: {'ARMED 🟢' if armed else 'PAUSED ⏸'}", severity="information" if armed else "warning")
+        self.query_one("#stage_hud", StageHUDWidget).refresh()
+        self.update_log_mode_label()
+
+    def action_force_heal(self) -> None:
+        """Trigger an immediate diagnostic health evaluation and breaker reset."""
+        if self.healing_engine.circuit_tripped:
+            self.healing_engine.reset_circuit_breaker()
+        state = self.healing_engine.evaluate_health(tunnel_running=(get_tunnel_pid() is not None))
+        self.notify(f"Diagnostic & Healing cycle executed. Health: {state.value}", severity="information")
+        self.query_one("#stage_hud", StageHUDWidget).refresh()
+
+    def update_log_mode_label(self) -> None:
+        lbl = self.query_one("#log-mode-label", Label)
+        mode_str = "CURATED STAGE STREAM" if self.view_mode == "curated" else "RAW DAEMON LOGS"
+        heal_str = "ARMED 🟢" if self.healing_engine.is_armed else "PAUSED ⏸"
+        scroll_str = "ON ●" if self.auto_scroll_enabled else "PAUSED ⏸"
+        lbl.update(f"📋 [TAB/V] MODE: {mode_str}  │  [H] HEAL: {heal_str}  │  [SPACE] SCROLL: {scroll_str}")
+
     def action_toggle_autoscroll(self) -> None:
         self.auto_scroll_enabled = not self.auto_scroll_enabled
-        title_label = self.query_one("#logs-title", Label)
+        self.update_log_mode_label()
         if self.auto_scroll_enabled:
-            title_label.update("📜 LIVE TUNNEL LOGS  [● AUTO-SCROLL: ON]")
-            self.query_one(RichLog).scroll_end(animate=True)
+            target = self.query_one("#curated_log_view" if self.view_mode == "curated" else "#raw_log_view", RichLog)
+            target.scroll_end(animate=True)
             self.notify("Auto-scroll re-engaged", severity="information")
         else:
-            title_label.update("📜 LIVE TUNNEL LOGS  [⏸ SCROLL PAUSED]")
             self.notify("Auto-scroll paused (inspect logs)", severity="warning")
 
     def action_clear_logs(self) -> None:
-        self.query_one(RichLog).clear()
-        self.notify("Logs cleared from view")
+        self.query_one("#curated_log_view", RichLog).clear()
+        self.query_one("#raw_log_view", RichLog).clear()
+        self.notify("Logs cleared from view (Original raw file preserved on disk)")
+
+    def heal_restart_callback(self, opts: dict) -> bool:
+        """Invoked by healing engine to remediate anomalies (e.g. protocol fallback)."""
+        protocol = opts.get("protocol")
+        self.restart_tunnel_async(protocol=protocol)
+        return True
 
     # ------------------------------------------------------------------------
     # SERVER MODE: ADD / EDIT / DELETE ROUTE ACTIONS
@@ -1194,8 +1470,8 @@ class TunnelFlareApp(App):
         self.restart_tunnel_async()
 
     @work(thread=True)
-    def restart_tunnel_async(self) -> None:
-        self.notify("Restarting tunnel process...")
+    def restart_tunnel_async(self, protocol: Optional[str] = None) -> None:
+        self.notify(f"Restarting tunnel process{' (' + protocol.upper() + ')' if protocol else ''}...")
         pid = get_tunnel_pid()
         if pid:
             try:
@@ -1208,12 +1484,12 @@ class TunnelFlareApp(App):
                     PID_FILE.unlink()
             except Exception:
                 pass
-        self.start_tunnel_sync()
+        self.start_tunnel_sync(protocol=protocol)
 
-    def start_tunnel_sync(self) -> None:
+    def start_tunnel_sync(self, protocol: Optional[str] = None) -> bool:
         if not CONFIG_FILE.exists():
             self.notify("Configuration file not found. Run 'setup' first.", severity="error")
-            return
+            return False
 
         try:
             with open(CONFIG_FILE, "r") as f:
@@ -1224,11 +1500,11 @@ class TunnelFlareApp(App):
 
             if not tunnel_id or not cred_file:
                 self.notify("Invalid config: Tunnel ID or Credential File missing", severity="error")
-                return
+                return False
 
             if not Path(cred_file).exists():
                 self.notify(f"Credential file missing: {cred_file}", severity="error")
-                return
+                return False
 
             TUNNEL_DIR.mkdir(exist_ok=True, mode=0o700)
             cmd = [
@@ -1236,9 +1512,18 @@ class TunnelFlareApp(App):
                 "tunnel",
                 "--config", str(CONFIG_FILE),
                 "--cred-file", str(cred_file),
-                "run",
-                tunnel_id
             ]
+            if protocol:
+                cmd.extend(["--protocol", protocol])
+            cmd.extend(["run", tunnel_id])
+
+            # Rotate raw log file if it exceeds 25 MB
+            if LOG_FILE.exists() and LOG_FILE.stat().st_size > 25 * 1024 * 1024:
+                backup = LOG_FILE.with_suffix(".log.1")
+                try:
+                    LOG_FILE.replace(backup)
+                except Exception:
+                    pass
 
             with open(LOG_FILE, "a") as log:
                 proc = subprocess.Popen(
@@ -1251,9 +1536,11 @@ class TunnelFlareApp(App):
             with open(PID_FILE, "w") as pf:
                 pf.write(str(proc.pid))
 
-            self.notify(f"Tunnel started (PID: {proc.pid})", severity="information")
+            self.notify(f"Tunnel started (PID: {proc.pid}, Proto: {protocol or 'auto'})", severity="information")
+            return True
         except Exception as e:
             self.notify(f"Error starting tunnel: {e}", severity="error")
+            return False
 
 
 if __name__ == "__main__":

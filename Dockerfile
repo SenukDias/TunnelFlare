@@ -35,7 +35,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt httpx
 
 # Copy application files
-COPY main.py tui.py utils.py cloudflare_api.py web_server.py ./
+COPY main.py tui.py utils.py cloudflare_api.py web_server.py log_parser.py healing_engine.py ./
 COPY resources ./resources
 
 # Copy compiled frontend from Stage 1
