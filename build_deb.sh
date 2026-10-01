@@ -51,6 +51,8 @@ ADD_DATA_ARGS=(
     --add-data "utils.py:."
     --add-data "cloudflare_api.py:."
     --add-data "web_server.py:."
+    --add-data "log_parser.py:."
+    --add-data "healing_engine.py:."
 )
 
 if [ -d "web/dist" ]; then

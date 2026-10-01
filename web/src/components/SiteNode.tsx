@@ -1,27 +1,44 @@
 import React from 'react';
 import { Handle, Position } from '@xyflow/react';
-import { 
-  Building2, 
-  Server, 
-  Cloud, 
-  Network, 
-  Copy, 
-  Check, 
-  Cpu, 
-  Globe 
+import {
+  Building2, Server, Cloud, Network,
+  Copy, Check, Globe, Cpu,
 } from 'lucide-react';
 import type { MeshNode } from '../types';
 
 interface SiteNodeProps {
   data: {
     node: MeshNode;
-    onConnectNode?: (nodeId: string) => void;
+    onContextMenu?: (e: React.MouseEvent, nodeId: string) => void;
   };
+  selected?: boolean;
 }
 
-export const SiteNode: React.FC<SiteNodeProps> = ({ data }) => {
+const getRoleIcon = (node: MeshNode) => {
+  if (node.is_local) return { Icon: Building2, color: '#2dd4bf', bg: 'rgba(45,212,191,0.1)' };
+  if (node.name.toLowerCase().includes('cloud') || node.name.toLowerCase().includes('vpc'))
+    return { Icon: Cloud, color: '#a78bfa', bg: 'rgba(167,139,250,0.1)' };
+  return { Icon: Server, color: '#f97316', bg: 'rgba(249,115,22,0.1)' };
+};
+
+const getStatusStyle = (status: string) => {
+  if (status === 'healthy')  return { dotClass: 'status-dot--healthy',  label: 'Healthy',  badgeClass: 'badge-success' };
+  if (status === 'warning')  return { dotClass: 'status-dot--warning',  label: 'Degraded', badgeClass: 'badge-warning' };
+  return { dotClass: 'status-dot--offline', label: 'Offline',  badgeClass: 'badge-error' };
+};
+
+const HANDLE_POSITIONS = [
+  { type: 'target' as const, pos: Position.Top,    id: 'top' },
+  { type: 'source' as const, pos: Position.Right,  id: 'right' },
+  { type: 'target' as const, pos: Position.Bottom, id: 'bottom' },
+  { type: 'source' as const, pos: Position.Left,   id: 'left' },
+];
+
+export const SiteNode: React.FC<SiteNodeProps> = ({ data, selected }) => {
   const { node } = data;
   const [copied, setCopied] = React.useState(false);
+  const { Icon, color, bg } = getRoleIcon(node);
+  const { dotClass, label, badgeClass } = getStatusStyle(node.status);
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -29,156 +46,161 @@ export const SiteNode: React.FC<SiteNodeProps> = ({ data }) => {
     setTimeout(() => setCopied(false), 1500);
   };
 
-  const getRoleIcon = () => {
-    if (node.is_local) return <Building2 size={16} color="var(--cyan)" />;
-    if (node.name.toLowerCase().includes('cloud') || node.name.toLowerCase().includes('vpc')) {
-      return <Cloud size={16} color="var(--purple)" />;
-    }
-    return <Server size={16} color="var(--cf-orange)" />;
-  };
-
-  const getStatusBadge = () => {
-    if (node.status === 'healthy') {
-      return (
-        <span className="badge badge-emerald" style={{ fontSize: '0.65rem' }}>
-          <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--emerald)' }} />
-          HEALTHY
-        </span>
-      );
-    }
-    if (node.status === 'warning') {
-      return (
-        <span className="badge badge-orange" style={{ fontSize: '0.65rem' }}>
-          <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--amber)' }} />
-          DEGRADED
-        </span>
-      );
-    }
-    return (
-      <span className="badge" style={{ background: 'rgba(255, 51, 102, 0.15)', color: 'var(--rose)', border: '1px solid rgba(255, 51, 102, 0.3)', fontSize: '0.65rem' }}>
-        <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--rose)' }} />
-        OFFLINE
-      </span>
-    );
-  };
+  const borderColor = selected
+    ? color
+    : node.is_local
+    ? `${color}50`
+    : 'var(--border-1)';
 
   return (
-    <div style={{
-      width: '290px',
-      background: node.is_local ? 'linear-gradient(180deg, #111e3b 0%, #0c1529 100%)' : 'linear-gradient(180deg, #141c2e 0%, #0d1424 100%)',
-      border: node.is_local ? '1.5px solid var(--cyan)' : '1px solid var(--border-highlight)',
-      borderRadius: 'var(--radius-lg)',
-      padding: '0.85rem',
-      boxShadow: node.is_local ? '0 0 25px rgba(0, 229, 255, 0.25)' : 'var(--shadow-card)',
-      color: 'var(--text-main)',
-      position: 'relative',
-      userSelect: 'none'
-    }}>
-      {/* Top Handle */}
-      <Handle type="target" position={Position.Top} style={{ background: 'var(--cyan)', width: '10px', height: '10px' }} />
-      <Handle type="source" position={Position.Top} id="top-source" style={{ background: 'var(--cf-orange)', width: '10px', height: '10px', opacity: 0 }} />
+    <div
+      onContextMenu={(e) => {
+        e.preventDefault();
+        data.onContextMenu?.(e, node.id);
+      }}
+      style={{
+        width: 260,
+        background: 'var(--bg-surface)',
+        border: `1px solid ${borderColor}`,
+        borderRadius: 'var(--radius-lg)',
+        overflow: 'hidden',
+        userSelect: 'none',
+        boxShadow: selected
+          ? `0 0 0 1px ${color}30, var(--shadow-md)`
+          : 'var(--shadow-sm)',
+        transition: 'border-color 0.15s, box-shadow 0.15s',
+      }}
+    >
+      {/* Connection handles — all 4 sides */}
+      {HANDLE_POSITIONS.map(({ type, pos, id }) => (
+        <Handle
+          key={id}
+          type={type}
+          position={pos}
+          id={id}
+          style={{ zIndex: 10 }}
+        />
+      ))}
+      {/* Source handles on same sides as targets (for bidirectional) */}
+      <Handle type="source" position={Position.Top}    id="top-src"    style={{ opacity: 0, pointerEvents: 'none' }} />
+      <Handle type="source" position={Position.Bottom} id="bottom-src" style={{ opacity: 0, pointerEvents: 'none' }} />
+      <Handle type="target" position={Position.Right}  id="right-tgt"  style={{ opacity: 0, pointerEvents: 'none' }} />
+      <Handle type="target" position={Position.Left}   id="left-tgt"   style={{ opacity: 0, pointerEvents: 'none' }} />
 
-      {/* Card Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.65rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <div style={{
-            background: 'var(--bg-surface-elevated)',
-            padding: '0.4rem',
+      {/* ── Card Header ─────────────────────────── */}
+      <div style={{ padding: '12px 12px 10px', display: 'flex', alignItems: 'center', gap: 10 }}>
+        {/* Icon box */}
+        <div
+          className="node-icon-box"
+          style={{ background: bg, borderColor: `${color}25` }}
+        >
+          <Icon size={16} color={color} strokeWidth={1.8} />
+        </div>
+
+        {/* Name + location */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-1)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {node.name.replace(/^[^\w]+ /, '')}
+            </span>
+            {node.is_local && (
+              <span className="badge badge-info" style={{ fontSize: 9, padding: '1px 5px', lineHeight: 1.4 }}>
+                LOCAL
+              </span>
+            )}
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>
+            {node.city || 'Zero Trust Node'}{node.country ? `, ${node.country}` : ''}
+          </div>
+        </div>
+
+        {/* Status badge */}
+        <div className={`badge ${badgeClass}`} style={{ flexShrink: 0, padding: '2px 7px' }}>
+          <span className={`status-dot ${dotClass}`} style={{ width: 5, height: 5 }} />
+          <span style={{ fontSize: 10 }}>{label}</span>
+        </div>
+      </div>
+
+      {/* ── Divider ──────────────────────────────── */}
+      <div className="divider" />
+
+      {/* ── Data Rows ────────────────────────────── */}
+      <div style={{ padding: '6px 12px 8px' }}>
+        {/* Subnet CIDR — primary value */}
+        <div
+          style={{
+            background: 'var(--bg-surface-2)',
+            border: '1px solid var(--border-1)',
             borderRadius: 'var(--radius-sm)',
+            padding: '6px 10px',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
-            border: '1px solid var(--border-subtle)'
-          }}>
-            {getRoleIcon()}
-          </div>
-          <div>
-            <div style={{ fontWeight: 700, fontSize: '0.92rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-              <span>{node.name}</span>
-              {node.is_local && (
-                <span style={{ fontSize: '0.65rem', background: 'rgba(0, 229, 255, 0.15)', color: 'var(--cyan)', padding: '0.1rem 0.35rem', borderRadius: '4px', fontWeight: 700 }}>
-                  LOCAL
-                </span>
-              )}
-            </div>
-            <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>
-              {node.city || 'Zero Trust Node'}, {node.country || 'Edge'}
-            </div>
-          </div>
-        </div>
-
-        {getStatusBadge()}
-      </div>
-
-      {/* Primary LAN Subnet CIDR (Crucial for Site-to-Site VPN) */}
-      <div style={{
-        background: 'var(--bg-base)',
-        border: '1px solid var(--border-subtle)',
-        borderRadius: 'var(--radius-md)',
-        padding: '0.5rem 0.65rem',
-        marginBottom: '0.65rem',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-          <Network size={14} color="var(--emerald)" />
-          <div>
-            <div style={{ fontSize: '0.65rem', color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Routed Subnet CIDR</div>
-            <div className="mono" style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--emerald)' }}>
-              {node.lan_cidr}
-            </div>
-          </div>
-        </div>
-        <button 
-          onClick={() => copyToClipboard(node.lan_cidr)}
-          style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-dim)', padding: '0.2rem' }}
-          title="Copy CIDR"
+            justifyContent: 'space-between',
+            marginBottom: 8,
+          }}
         >
-          {copied ? <Check size={13} color="var(--emerald)" /> : <Copy size={13} />}
-        </button>
-      </div>
-
-      {/* Network Details Grid (WAN IP, Hardware MAC) */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', fontSize: '0.75rem' }}>
-        {/* WAN Public IP */}
-        <div style={{ background: 'var(--bg-surface-elevated)', padding: '0.4rem 0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
-          <div style={{ color: 'var(--text-dim)', fontSize: '0.65rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-            <Globe size={11} color="var(--cf-orange)" />
-            <span>Public WAN IP</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Network size={11} color="var(--state-success)" strokeWidth={2} />
+            <div>
+              <div style={{ fontSize: 9, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Subnet</div>
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 12, fontWeight: 600, color: 'var(--state-success)' }}>
+                {node.lan_cidr}
+              </div>
+            </div>
           </div>
-          <div className="mono" style={{ fontWeight: 600, color: 'var(--text-main)', marginTop: '0.15rem' }}>
-            {node.wan_ip}
-          </div>
+          <button
+            onClick={() => copyToClipboard(node.lan_cidr)}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--text-3)', display: 'flex' }}
+            title="Copy"
+          >
+            {copied ? <Check size={11} color="var(--state-success)" /> : <Copy size={11} />}
+          </button>
         </div>
 
-        {/* Physical Hardware MAC */}
-        <div style={{ background: 'var(--bg-surface-elevated)', padding: '0.4rem 0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
-          <div style={{ color: 'var(--text-dim)', fontSize: '0.65rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-            <Cpu size={11} color="var(--purple)" />
-            <span>Physical MAC</span>
+        {/* Two-column detail grid */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+          {/* WAN IP */}
+          <div style={{ background: 'var(--bg-surface-2)', border: '1px solid var(--border-1)', borderRadius: 'var(--radius-sm)', padding: '5px 8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
+              <Globe size={9} color="var(--text-3)" />
+              <span style={{ fontSize: 9, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>WAN IP</span>
+            </div>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, fontWeight: 500, color: 'var(--text-1)' }}>
+              {node.wan_ip}
+            </div>
           </div>
-          <div className="mono" style={{ fontWeight: 600, color: 'var(--text-main)', marginTop: '0.15rem', fontSize: '0.7rem' }}>
-            {node.mac || '5c:80:b6:34:9c:bb'}
+
+          {/* PoP / Region */}
+          <div style={{ background: 'var(--bg-surface-2)', border: '1px solid var(--border-1)', borderRadius: 'var(--radius-sm)', padding: '5px 8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
+              <Cpu size={9} color="var(--text-3)" />
+              <span style={{ fontSize: 9, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>PoP</span>
+            </div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: '#f97316' }}>
+              {node.colo || 'SIN'}
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Footer Tag & Drag Hint */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '0.65rem', paddingTop: '0.5rem', borderTop: '1px solid var(--border-subtle)', fontSize: '0.7rem', color: 'var(--text-dim)' }}>
-        <span>PoP: <strong style={{ color: 'var(--cf-orange)' }}>[{node.colo || 'SIN'}]</strong></span>
-        <span style={{ color: 'var(--cyan)', fontStyle: 'italic', fontSize: '0.68rem' }}>● Drag port to link</span>
+      {/* ── Footer ───────────────────────────────── */}
+      <div
+        style={{
+          padding: '6px 12px',
+          borderTop: '1px solid var(--border-1)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          background: 'var(--bg-surface-2)',
+        }}
+      >
+        <span style={{ fontSize: 10, color: 'var(--text-3)' }}>
+          {node.routes?.length ?? 0} routes
+        </span>
+        <span style={{ fontSize: 10, color: 'var(--text-3)', fontStyle: 'italic' }}>
+          Drag handle to connect →
+        </span>
       </div>
-
-      {/* Left, Right, Bottom Connection Handles */}
-      <Handle type="target" position={Position.Left} id="left-target" style={{ background: 'var(--cyan)', width: '10px', height: '10px' }} />
-      <Handle type="source" position={Position.Left} id="left-source" style={{ background: 'var(--cf-orange)', width: '10px', height: '10px', opacity: 0 }} />
-
-      <Handle type="target" position={Position.Right} id="right-target" style={{ background: 'var(--cyan)', width: '10px', height: '10px' }} />
-      <Handle type="source" position={Position.Right} id="right-source" style={{ background: 'var(--cf-orange)', width: '10px', height: '10px', opacity: 0 }} />
-
-      <Handle type="target" position={Position.Bottom} id="bottom-target" style={{ background: 'var(--cyan)', width: '10px', height: '10px' }} />
-      <Handle type="source" position={Position.Bottom} id="bottom-source" style={{ background: 'var(--cf-orange)', width: '10px', height: '10px', opacity: 0 }} />
     </div>
   );
 };

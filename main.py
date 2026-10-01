@@ -98,22 +98,32 @@ def refresh_interface(current_step_index: int):
     console.print(get_header(current_step_index))
     console.print("\n")
 
-def start_tunnel_background(tunnel_id: str, config_path: Path, cred_path: Path):
+def start_tunnel_background(tunnel_id: str, config_path: Path, cred_path: Path, protocol: Optional[str] = None):
     """
-    Starts the tunnel in the background and saves the PID.
+    Starts the tunnel in the background with log preservation and saves the PID.
     """
-    TUNNEL_DIR.mkdir(exist_ok=True)
+    TUNNEL_DIR.mkdir(exist_ok=True, mode=0o700)
     
     cmd = [
         "cloudflared", 
         "tunnel", 
         "--config", str(config_path), 
         "--cred-file", str(cred_path),
-        "run", 
-        tunnel_id
     ]
+    if protocol:
+        cmd.extend(["--protocol", protocol])
+
+    cmd.extend(["run", tunnel_id])
     
-    with open(LOG_FILE, "w") as log:
+    # Rotate log if file exceeds 25 MB to preserve storage
+    if LOG_FILE.exists() and LOG_FILE.stat().st_size > 25 * 1024 * 1024:
+        backup = LOG_FILE.with_suffix(".log.1")
+        try:
+            LOG_FILE.replace(backup)
+        except Exception:
+            pass
+
+    with open(LOG_FILE, "a") as log:
         process = subprocess.Popen(
             cmd,
             stdout=log,
@@ -124,8 +134,8 @@ def start_tunnel_background(tunnel_id: str, config_path: Path, cred_path: Path):
     with open(PID_FILE, "w") as f:
         f.write(str(process.pid))
         
-    console.print(f"[green]Tunnel '{tunnel_id}' started in background (PID: {process.pid}).[/green]")
-    console.print(f"Logs are being written to {LOG_FILE}")
+    console.print(f"[green]Tunnel '{tunnel_id}' started in background (PID: {process.pid}, Proto: {protocol or 'auto/quic'}).[/green]")
+    console.print(f"Original logs safely preserved in {LOG_FILE}")
     console.print(f"\n[bold]Run [cyan]tunnelflare status[/cyan] to view live status.[/bold]")
 
 def is_tunnel_running():
@@ -484,8 +494,12 @@ def status():
         from tui import TunnelFlareApp
         app = TunnelFlareApp()
         app.run()
-    except ImportError:
-        console.print("[red]Textual is not installed. Please run './install.sh' again.[/red]")
+    except ModuleNotFoundError as e:
+        if getattr(e, "name", None) == "textual":
+            console.print("[red]Textual is not installed. Please run './install.sh' again.[/red]")
+        else:
+            console.print(f"[red]Missing internal module or dependency '{getattr(e, 'name', str(e))}': {e}[/red]")
+            console.print("[yellow]Please run './install.sh' again to update all installed files.[/yellow]")
     except Exception as e:
         console.print(f"[red]Error launching dashboard: {e}[/red]")
 
@@ -637,25 +651,36 @@ def account_login(
     client = cloudflare_api.CloudflareClient(token=token.strip())
     try:
         verify_res = client.verify_token()
-        accounts = client.get_accounts()
     except cloudflare_api.CloudflareAPIError as e:
         console.print(f"[red]Authentication failed: {e}[/red]")
         raise typer.Exit(1)
 
-    if not accounts:
-        console.print("[red]Error: No Cloudflare accounts found with this token.[/red]")
-        raise typer.Exit(1)
+    try:
+        accounts = client.get_accounts()
+    except cloudflare_api.CloudflareAPIError:
+        accounts = []
 
-    selected_account = accounts[0]
-    if account_id:
-        match = next((a for a in accounts if a.get("id") == account_id), None)
-        if match:
-            selected_account = match
-        else:
-            console.print(f"[yellow]Warning: Account ID '{account_id}' not found in list, using {selected_account.get('id')}[/yellow]")
+    acc_id = account_id
+    acc_name = "Primary Account"
 
-    acc_id = selected_account.get("id")
-    acc_name = selected_account.get("name", "Primary Account")
+    if accounts:
+        selected_account = accounts[0]
+        if account_id:
+            match = next((a for a in accounts if a.get("id") == account_id), None)
+            if match:
+                selected_account = match
+            else:
+                console.print(f"[yellow]Warning: Account ID '{account_id}' not found in list, using {selected_account.get('id')}[/yellow]")
+        acc_id = selected_account.get("id")
+        acc_name = selected_account.get("name", "Primary Account")
+    elif not acc_id:
+        console.print("[yellow]Could not auto-discover Cloudflare Account (Token permissions might be restricted).[/yellow]")
+        acc_id = Prompt.ask("[bold cyan]Please enter your Cloudflare Account ID manually[/bold cyan]")
+        if not acc_id or not acc_id.strip():
+            console.print("[red]Error: Account ID is required.[/red]")
+            raise typer.Exit(1)
+        acc_id = acc_id.strip()
+
     site = site_name or f"Site-{socket.gethostname()}"
 
     cloudflare_api.save_account_config(

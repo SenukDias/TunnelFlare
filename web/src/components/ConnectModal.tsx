@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { X, Network, ArrowRight, ShieldCheck } from 'lucide-react';
+import React, { useState, useId } from 'react';
+import { X, Zap, Server, Cloud, Building2 } from 'lucide-react';
 import type { MeshNode } from '../types';
 
 interface ConnectModalProps {
@@ -11,6 +11,80 @@ interface ConnectModalProps {
   onConfirmConnect: (tunnelId: string, network: string, comment: string) => Promise<void>;
 }
 
+// Tiny animated bezier preview line component
+const PreviewLine: React.FC<{ status?: 'ok' | 'error' }> = ({ status = 'ok' }) => {
+  const color = status === 'ok' ? '#2dd4bf' : '#ef4444';
+  const pathId = useId();
+  return (
+    <svg width="80" height="40" viewBox="0 0 80 40" style={{ overflow: 'visible' }}>
+      <defs>
+        <path id={pathId} d="M 0 20 C 30 20 50 20 80 20" />
+      </defs>
+      {/* Track */}
+      <path d="M 0 20 C 30 20 50 20 80 20" fill="none" stroke="var(--border-1)" strokeWidth="1.5" />
+      {/* Animated stroke */}
+      <path
+        d="M 0 20 C 30 20 50 20 80 20"
+        fill="none"
+        stroke={color}
+        strokeWidth="1.5"
+        strokeDasharray="8 4"
+        strokeOpacity="0.7"
+        style={{ animation: 'flow-particle 1.5s linear infinite' }}
+      />
+      {/* Traveling dot */}
+      <circle r="3" fill={color}>
+        <animateMotion dur="1.8s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.6 1">
+          <mpath href={`#${pathId}`} />
+        </animateMotion>
+      </circle>
+    </svg>
+  );
+};
+
+const NodeMiniCard: React.FC<{ node: MeshNode }> = ({ node }) => {
+  const isLocal = node.is_local;
+  const isCloud = node.name.toLowerCase().includes('cloud') || node.name.toLowerCase().includes('vpc');
+  const Icon = isLocal ? Building2 : isCloud ? Cloud : Server;
+  const color = isLocal ? '#2dd4bf' : isCloud ? '#a78bfa' : '#f97316';
+
+  return (
+    <div
+      style={{
+        background: 'var(--bg-surface-2)',
+        border: `1px solid ${color}30`,
+        borderRadius: 10,
+        padding: '10px 14px',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: 6,
+        minWidth: 90,
+      }}
+    >
+      <div
+        style={{
+          width: 32, height: 32,
+          borderRadius: 8,
+          background: `${color}15`,
+          border: `1px solid ${color}25`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}
+      >
+        <Icon size={16} color={color} strokeWidth={1.8} />
+      </div>
+      <div style={{ textAlign: 'center' }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-1)', whiteSpace: 'nowrap' }}>
+          {node.name.replace(/^[^\w]+ /, '').split(' ').slice(0, 2).join(' ')}
+        </div>
+        <div style={{ fontSize: 9, fontFamily: 'var(--font-mono)', color: 'var(--text-3)', marginTop: 1 }}>
+          {node.colo || 'PoP'}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export const ConnectModal: React.FC<ConnectModalProps> = ({
   isOpen,
   onClose,
@@ -19,169 +93,190 @@ export const ConnectModal: React.FC<ConnectModalProps> = ({
   allNodes,
   onConfirmConnect,
 }) => {
-  const [selectedTunnelId, setSelectedTunnelId] = useState('');
-  const [networkCidr, setNetworkCidr] = useState('');
+  const [selectedTarget, setSelectedTarget] = useState<string>(targetNode?.id ?? '');
+  const [network, setNetwork] = useState('');
   const [comment, setComment] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (sourceNode) {
-      setSelectedTunnelId(sourceNode.id);
-    } else if (allNodes.length > 0) {
-      setSelectedTunnelId(allNodes[0].id);
-    }
+  React.useEffect(() => {
+    if (targetNode) setSelectedTarget(targetNode.id);
+    if (targetNode?.lan_cidr) setNetwork(targetNode.lan_cidr);
+  }, [targetNode]);
 
-    if (targetNode) {
-      setNetworkCidr(targetNode.lan_cidr);
-      setComment(`Route to ${targetNode.name}`);
-    } else {
-      setNetworkCidr('');
-      setComment('');
-    }
-  }, [sourceNode, targetNode, allNodes]);
+  if (!isOpen || !sourceNode) return null;
 
-  if (!isOpen) return null;
+  const resolvedTarget = allNodes.find((n) => n.id === selectedTarget) ?? null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedTunnelId || !networkCidr.trim()) {
-      setError('Please provide both the source gateway tunnel and target subnet CIDR.');
-      return;
-    }
+    if (!selectedTarget || !network.trim()) return;
     setError(null);
-    setIsSubmitting(true);
+    setLoading(true);
     try {
-      await onConfirmConnect(selectedTunnelId, networkCidr.trim(), comment.trim());
+      await onConfirmConnect(selectedTarget, network.trim(), comment.trim());
       onClose();
     } catch (err: any) {
-      setError(err?.message || 'Failed to establish route');
+      setError(err.message ?? 'Failed to establish route');
     } finally {
-      setIsSubmitting(false);
+      setLoading(false);
     }
   };
 
-  const selectedNodeObj = allNodes.find((n) => n.id === selectedTunnelId);
-
   return (
-    <div className="modal-backdrop">
-      <div className="modal-content glass-panel" style={{ padding: '1.75rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-            <div style={{ background: 'var(--cyan-glow)', padding: '0.45rem', borderRadius: 'var(--radius-md)' }}>
-              <Network size={20} color="var(--cyan)" />
-            </div>
-            <div>
-              <h3 style={{ fontSize: '1.15rem', fontWeight: 700 }}>Establish Zero Trust Mesh Route</h3>
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>
-                Create encrypted overlay route between site gateways via Cloudflare Virtual Networks.
-              </p>
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 460 }}>
+        {/* Header */}
+        <div
+          style={{
+            padding: '16px 20px',
+            borderBottom: '1px solid var(--border-1)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--text-1)' }}>Establish Zero Trust Route</div>
+            <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>
+              Connect two sites via a private tunnel
             </div>
           </div>
-          <button
-            onClick={onClose}
-            style={{ background: 'transparent', border: 'none', color: 'var(--text-dim)', cursor: 'pointer' }}
-          >
-            <X size={20} />
+          <button className="btn btn-ghost btn-icon" onClick={onClose}>
+            <X size={14} />
           </button>
         </div>
 
-        {/* Visual Route Flow Indicator */}
-        <div style={{
-          background: 'var(--bg-base)',
-          border: '1px solid var(--border-subtle)',
-          borderRadius: 'var(--radius-md)',
-          padding: '1rem',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-around',
-          marginBottom: '1.25rem'
-        }}>
-          <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)', textTransform: 'uppercase' }}>Source Site</div>
-            <div style={{ fontWeight: 700, color: 'var(--cyan)', marginTop: '0.15rem' }}>
-              {selectedNodeObj?.name || 'Select Gateway'}
+        {/* Preview diagram */}
+        <div
+          style={{
+            margin: '16px 20px 0',
+            background: 'var(--bg-surface-2)',
+            border: '1px solid var(--border-1)',
+            borderRadius: 10,
+            padding: '14px 20px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 12,
+          }}
+        >
+          <NodeMiniCard node={sourceNode} />
+          <PreviewLine status={error ? 'error' : 'ok'} />
+          {resolvedTarget ? (
+            <NodeMiniCard node={resolvedTarget} />
+          ) : (
+            <div
+              style={{
+                minWidth: 90, height: 72,
+                background: 'var(--bg-surface)',
+                border: '1px dashed var(--border-1)',
+                borderRadius: 10,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 10, color: 'var(--text-4)',
+              }}
+            >
+              Select target
             </div>
-            <div className="mono" style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              {selectedNodeObj?.lan_cidr || '0.0.0.0/0'}
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: 'var(--cf-orange)' }}>
-            <span>─────</span>
-            <ArrowRight size={18} />
-          </div>
-
-          <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)', textTransform: 'uppercase' }}>Target Subnet</div>
-            <div style={{ fontWeight: 700, color: 'var(--emerald)', marginTop: '0.15rem' }}>
-              {targetNode?.name || 'Remote Subnet'}
-            </div>
-            <div className="mono" style={{ fontSize: '0.75rem', color: 'var(--emerald)', fontWeight: 700 }}>
-              {networkCidr || 'CIDR Subnet'}
-            </div>
-          </div>
+          )}
         </div>
 
-        {error && (
-          <div style={{ background: 'rgba(255, 51, 102, 0.15)', border: '1px solid var(--rose)', padding: '0.75rem', borderRadius: 'var(--radius-md)', color: 'var(--rose)', fontSize: '0.85rem', marginBottom: '1rem' }}>
-            {error}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <div>
-            <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.35rem' }}>
-              Source Gateway Tunnel
+        {/* Form */}
+        <form onSubmit={handleSubmit} style={{ padding: '16px 20px 20px' }}>
+          {/* Target site selector */}
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ display: 'block', fontSize: 12, color: 'var(--text-3)', marginBottom: 5 }}>
+              Target Site
             </label>
             <select
-              className="input-field"
-              value={selectedTunnelId}
-              onChange={(e) => setSelectedTunnelId(e.target.value)}
+              value={selectedTarget}
+              onChange={(e) => {
+                setSelectedTarget(e.target.value);
+                const n = allNodes.find((x) => x.id === e.target.value);
+                if (n) setNetwork(n.lan_cidr);
+              }}
+              className="input"
+              style={{ fontFamily: 'var(--font-sans)' }}
               required
             >
-              {allNodes.map((n) => (
-                <option key={n.id} value={n.id}>
-                  {n.name} — {n.lan_cidr} ({n.wan_ip})
-                </option>
-              ))}
+              <option value="">— Select a site —</option>
+              {allNodes
+                .filter((n) => n.id !== sourceNode.id)
+                .map((n) => (
+                  <option key={n.id} value={n.id}>
+                    {n.name.replace(/^[^\w]+ /, '')} — {n.lan_cidr}
+                  </option>
+                ))}
             </select>
           </div>
 
-          <div>
-            <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.35rem' }}>
-              Target Subnet CIDR (Network IP Range to Route)
+          {/* Network CIDR */}
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ display: 'block', fontSize: 12, color: 'var(--text-3)', marginBottom: 5 }}>
+              Network CIDR
             </label>
             <input
-              type="text"
-              className="input-field"
-              placeholder="e.g. 192.168.20.0/24"
-              value={networkCidr}
-              onChange={(e) => setNetworkCidr(e.target.value)}
+              className="input input-mono"
+              placeholder="e.g. 10.200.0.0/16"
+              value={network}
+              onChange={(e) => setNetwork(e.target.value)}
               required
+              style={{ color: 'var(--state-success)' }}
             />
           </div>
 
-          <div>
-            <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.35rem' }}>
-              Route Note / Description
+          {/* Comment */}
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ display: 'block', fontSize: 12, color: 'var(--text-3)', marginBottom: 5 }}>
+              Comment <span style={{ color: 'var(--text-4)' }}>(optional)</span>
             </label>
             <input
-              type="text"
-              className="input-field"
-              placeholder="e.g. Encrypted Link to Branch Office"
+              className="input"
+              placeholder="e.g. Singapore Production VPC"
               value={comment}
               onChange={(e) => setComment(e.target.value)}
             />
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.5rem' }}>
-            <button type="button" className="btn btn-secondary" onClick={onClose}>
+          {/* Error */}
+          {error && (
+            <div
+              style={{
+                marginBottom: 12,
+                padding: '8px 12px',
+                background: 'var(--state-error-dim)',
+                border: '1px solid var(--state-error-border)',
+                borderRadius: 'var(--radius-sm)',
+                fontSize: 12,
+                color: 'var(--state-error)',
+              }}
+            >
+              {error}
+            </div>
+          )}
+
+          {/* Action buttons */}
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button type="button" className="btn btn-danger" onClick={onClose} style={{ flex: 1 }}>
               Cancel
             </button>
-            <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
-              <ShieldCheck size={16} />
-              <span>{isSubmitting ? 'Establishing Route...' : 'Create Mesh Link'}</span>
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={loading || !selectedTarget || !network}
+              style={{ flex: 2 }}
+            >
+              {loading ? (
+                <>
+                  <span style={{ display: 'inline-block', animation: 'spin-slow 1s linear infinite' }}>⟳</span>
+                  Establishing...
+                </>
+              ) : (
+                <>
+                  <Zap size={13} />
+                  Confirm Route
+                </>
+              )}
             </button>
           </div>
         </form>
