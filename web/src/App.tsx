@@ -59,7 +59,7 @@ const AppInner: React.FC = () => {
         city: 'Colombo', latitude: 6.9271, longitude: 79.8612,
         ip_forwarding: true, interfaces: [],
         primary_ip: '192.168.1.85/24', primary_mac: '5c:80:b6:34:9c:bb',
-        account_linked: false, account_id: null, account_name: null,
+        account_linked: false, account_id: null, account_name: null, account_email: null,
       });
     }
   }, []);
@@ -282,11 +282,7 @@ const AppInner: React.FC = () => {
         telemetry={telemetry}
         nodeStatus={nodeStatus}
         activeConnectionCount={meshLinks.length}
-        onOpenConnectModal={() => {
-          setConnectSource(meshNodes[0] ?? null);
-          setConnectTarget(null);
-          setIsConnectModalOpen(true);
-        }}
+
         onRefresh={() => { fetchStatus(); fetchMesh(true); }}
       />
 

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+
 import { X, Zap, Copy, BarChart2, Wifi } from 'lucide-react';
 
 export interface ContextMenuProps {

@@ -10,7 +10,6 @@ interface NavbarProps {
   telemetry: TelemetryData | null;
   nodeStatus: NodeStatus | null;
   activeConnectionCount?: number;
-  onOpenConnectModal: () => void;
   onRefresh: () => void;
 }
 
@@ -27,7 +26,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   telemetry,
   nodeStatus,
   activeConnectionCount = 0,
-  onOpenConnectModal,
   onRefresh,
 }) => {
   return (

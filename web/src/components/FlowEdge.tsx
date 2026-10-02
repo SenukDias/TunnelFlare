@@ -1,12 +1,10 @@
 import React, { useState, useCallback, useRef } from 'react';
 import {
-  BaseEdge,
   EdgeLabelRenderer,
   getBezierPath,
-  useReactFlow,
 } from '@xyflow/react';
 import type { EdgeProps } from '@xyflow/react';
-import { Activity, X, Zap } from 'lucide-react';
+import { Activity, X } from 'lucide-react';
 
 export interface FlowEdgeData {
   rtt_ms?: number;
@@ -23,12 +21,7 @@ const STATUS_COLORS: Record<string, string> = {
   pending:  '#3f3f46',
 };
 
-const STATUS_DIM: Record<string, string> = {
-  active:   'rgba(45,212,191,0.08)',
-  degraded: 'rgba(245,158,11,0.08)',
-  error:    'rgba(239,68,68,0.08)',
-  pending:  'rgba(63,63,70,0.08)',
-};
+
 
 // Mini RTT sparkline — last 8 values rendered as SVG bars
 const Sparkline: React.FC<{ value: number }> = ({ value }) => {
@@ -63,7 +56,6 @@ export const FlowEdge: React.FC<EdgeProps> = ({
   const edgeData = data as FlowEdgeData | undefined;
   const status = edgeData?.status ?? 'active';
   const strokeColor = STATUS_COLORS[status] ?? STATUS_COLORS.active;
-  const dimColor = STATUS_DIM[status] ?? STATUS_DIM.active;
 
   const [hovered, setHovered] = useState(false);
   const particleRef = useRef<SVGCircleElement>(null);

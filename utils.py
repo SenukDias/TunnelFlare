@@ -274,3 +274,23 @@ def configure_iptables_masquerade(interface: str, subnet: str) -> bool:
     except Exception:
         return False
 
+def check_warp_installed() -> bool:
+    """Check if Cloudflare WARP (warp-cli) is installed."""
+    return shutil.which("warp-cli") is not None
+
+def connect_warp() -> bool:
+    """Attempt to connect WARP for Mesh P2P routing."""
+    if not check_warp_installed():
+        console.print("[yellow]WARP client not found. Peer-to-peer egress routing will be disabled.[/yellow]")
+        return False
+    try:
+        status = run_command(["warp-cli", "status"])
+        if status and "Status update: Connected" in status:
+            return True
+        console.print("[cyan]Connecting Cloudflare WARP...[/cyan]")
+        run_command(["warp-cli", "connect"])
+        return True
+    except Exception as e:
+        console.print(f"[red]Failed to connect WARP: {e}[/red]")
+        return False
+

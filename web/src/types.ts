@@ -27,6 +27,7 @@ export interface NodeStatus {
   account_linked: boolean;
   account_id: string | null;
   account_name: string | null;
+  account_email: string | null;
 }
 
 export interface MeshNode {

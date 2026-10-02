@@ -169,6 +169,64 @@ else
     echo -e "${GREEN}cloudflared is already installed.${NC}"
 fi
 
+# 5.5 Check & Install WARP (warp-cli) for Mesh connectivity
+if ! command -v warp-cli &> /dev/null; then
+    echo -e "${ORANGE}Cloudflare WARP client (warp-cli) not found. Installing for Mesh P2P support...${NC}"
+    if command -v apt &> /dev/null; then
+        echo -e "${CYAN}Adding Cloudflare package repository for WARP...${NC}"
+        curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | sudo gpg --yes --dearmor --output /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
+        echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/cloudflare-client.list
+        sudo apt-get update && sudo apt-get install -y cloudflare-warp
+        echo -e "${GREEN}WARP installed successfully!${NC}"
+    else
+        echo -e "${RED}Please install Cloudflare WARP manually for your distribution to support P2P Mesh features.${NC}"
+    fi
+else
+    echo -e "${GREEN}warp-cli is already installed.${NC}"
+fi
+
+# 5.6 WARP Authentication setup
+if command -v warp-cli &> /dev/null; then
+    echo -e "\n${CYAN}WARP Client is ready. Do you want to authenticate WARP now to join the Zero Trust Mesh?${NC}"
+    echo "1) Interactive Login (Opens a browser URL)"
+    echo "2) Headless / MDM Login (Uses an MDM token file)"
+    echo "3) Skip for now"
+    read -p "Select option [1-3]: " WARP_CHOICE
+    case $WARP_CHOICE in
+        1)
+            echo -e "${CYAN}Starting interactive WARP registration...${NC}"
+            warp-cli registration new || true
+            warp-cli connect || true
+            ;;
+        2)
+            read -p "Enter path to MDM token file (e.g. mdm.xml): " MDM_PATH
+            if [ -f "$MDM_PATH" ]; then
+                sudo mkdir -p /var/lib/cloudflare-warp/
+                sudo cp "$MDM_PATH" /var/lib/cloudflare-warp/mdm.xml
+                echo -e "${GREEN}MDM file copied. Restarting WARP daemon...${NC}"
+                sudo systemctl restart warp-svc || true
+                warp-cli connect || true
+            else
+                echo -e "${RED}File not found. Skipping WARP auth.${NC}"
+            fi
+            ;;
+        *)
+            echo -e "Skipping WARP authentication."
+            ;;
+    esac
+fi
+
+# 5.7 Split Tunnels Warning
+echo -e "\n${ORANGE}======================================================${NC}"
+echo -e "${ORANGE}  CRITICAL REMINDER: ZERO TRUST SPLIT TUNNELS         ${NC}"
+echo -e "${ORANGE}======================================================${NC}"
+echo -e "To ensure peer-to-peer pings and routing work properly,"
+echo -e "you MUST update your Cloudflare Zero Trust Dashboard:"
+echo -e "1. Go to Settings -> Network -> Split Tunnels"
+echo -e "2. Remove local subnets (like 10.0.0.0/8 or 192.168.0.0/16) from the Exclude list."
+echo -e "If you skip this, WARP will drop private IPs and pinging will fail!"
+echo -e "${ORANGE}======================================================${NC}\n"
+
 # 6. Create Wrapper Script
 echo -e "Creating executable wrapper..."
 cat << 'EOF' > "$INSTALL_DIR/tunnelflare"

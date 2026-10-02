@@ -9,9 +9,8 @@ import {
   addEdge,
   BackgroundVariant,
   Panel,
-  useReactFlow,
 } from '@xyflow/react';
-import type { Connection, Edge, Node, EdgeMouseHandler, NodeMouseHandler } from '@xyflow/react';
+import type { Connection, Edge, Node, EdgeMouseHandler } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { toPng } from 'html-to-image';
 import {
@@ -93,10 +92,9 @@ export const MeshCanvas: React.FC<MeshCanvasProps> = ({
 }) => {
   const [layoutMode, setLayoutMode] = useState<LayoutMode>('hub-spoke');
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [, setIsFullscreen] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const canvasRef = useRef<HTMLDivElement>(null);
-  const rfRef = useRef<HTMLDivElement>(null);
 
   const edgeTypes = useMemo(() => ({ flowEdge: FlowEdge }), []);
   const nodeTypes = useMemo(() => ({ siteNode: SiteNode }), []);
@@ -135,6 +133,8 @@ export const MeshCanvas: React.FC<MeshCanvasProps> = ({
       id: `edge-${link.source}-${link.target}-${i}`,
       source: link.source,
       target: link.target,
+      sourceHandle: 'right',
+      targetHandle: 'left-tgt',
       type: 'flowEdge',
       data: {
         rtt_ms: link.rtt_ms,

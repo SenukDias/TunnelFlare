@@ -23,6 +23,7 @@ import yaml
 from typing import Optional, List, Dict, Any
 from rich import box
 
+import utils
 from utils import check_cloudflared_installed, install_cloudflared, run_command
 
 app = typer.Typer()
@@ -830,6 +831,7 @@ def mesh_route_add(
     try:
         res = client.add_cidr_route(network=network, tunnel_id=t_id, comment=comment)
         console.print(f"[green]Successfully registered CIDR route {network} to tunnel {t_id}![/green]")
+        utils.connect_warp()
     except cloudflare_api.CloudflareAPIError as e:
         console.print(f"[red]Failed to add route: {e}[/red]")
 
