@@ -247,9 +247,8 @@ elif command -v sudo &> /dev/null; then
     sudo ln -sf "$INSTALL_DIR/tunnelflare" "/usr/local/bin/tunnelflare" < /dev/tty || true
 fi
 
-# 8. Check PATH (Fallback to local bin if global fails)
-if [ ! -f "/usr/local/bin/tunnelflare" ]; then
-    echo -e "${ORANGE}Global link failed or skipped. Falling back to local bin...${NC}"
+# 8. Always create local bin link just in case
+echo -e "Creating local bin link..."
     mkdir -p "$BIN_DIR"
     ln -sf "$INSTALL_DIR/tunnelflare" "$BIN_DIR/tunnelflare"
 
@@ -270,7 +269,6 @@ if [ ! -f "/usr/local/bin/tunnelflare" ]; then
             echo -e "${ORANGE}Please restart your terminal or run: source $SHELL_RC${NC}"
         fi
     fi
-fi
 
 # 9. Handle Remote Enrollment if Flags Provided
 if [ "$JOIN_MESH" = true ]; then
