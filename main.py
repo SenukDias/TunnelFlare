@@ -622,6 +622,33 @@ def web(
     else:
         run_web_server(host=host, port=port)
 
+@app.command("web-stop")
+def web_stop():
+    """
+    Stop the background web server daemon.
+    """
+    import subprocess
+    import os
+    
+    console.print("[bold cyan]Stopping Web Server Daemon...[/bold cyan]")
+    try:
+        # Find PIDs matching uvicorn web_server:app
+        cmd = "ps -ef | grep 'uvicorn web_server:app' | grep -v grep | awk '{print $2}'"
+        pids = subprocess.check_output(cmd, shell=True, text=True).strip().split('\n')
+        
+        killed = 0
+        for pid in pids:
+            if pid:
+                os.kill(int(pid), 9)
+                killed += 1
+                
+        if killed > 0:
+            console.print(f"[green]Successfully stopped {killed} web server process(es).[/green]")
+        else:
+            console.print("[yellow]No background web server is currently running.[/yellow]")
+    except Exception as e:
+        console.print(f"[red]Failed to stop web server: {e}[/red]")
+
 
 # -------------------------------------------------------------
 # Account Sub-App: Cloudflare Zero Trust Authentication

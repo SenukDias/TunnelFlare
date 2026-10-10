@@ -29,7 +29,12 @@ export const WorldMap: React.FC<WorldMapProps> = ({ nodesList, linksList }) => {
       });
 
       // Dark Matter CartoDB Basemap
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      const apiKey = import.meta.env.VITE_MAP_API_KEY || 'cb1_47dd_1_39394a10d1ccb72cbfe2927a';
+      const tileUrl = apiKey
+        ? `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?api_key=${apiKey}`
+        : 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+
+      L.tileLayer(tileUrl, {
         maxZoom: 19,
         subdomains: 'abcd',
       }).addTo(map);

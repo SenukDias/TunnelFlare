@@ -17,6 +17,7 @@ venv/
 .venv/
 env/
 dist/
+!web/dist/
 build/
 build_deb/
 *.egg-info/
