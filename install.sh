@@ -65,14 +65,23 @@ fi
 # 1. Preserve Existing Config and State
 if [ -d "$INSTALL_DIR" ]; then
     echo -e "${ORANGE}Updating existing installation at $INSTALL_DIR...${NC}"
+    
+    # Safely stop any running instances so the old UI is cleared from memory
+    pkill -f "uvicorn web_server:app" 2>/dev/null || true
+    if [ -f "$INSTALL_DIR/tunnel.pid" ]; then
+        PID=$(cat "$INSTALL_DIR/tunnel.pid")
+        if kill -0 "$PID" 2>/dev/null; then
+            echo -e "Stopping background mesh process (PID: $PID)..."
+            kill "$PID" || true
+        fi
+        cp "$INSTALL_DIR/tunnel.pid" /tmp/tunnelflare_pid_backup
+    fi
+
     if [ -f "$INSTALL_DIR/config.yml" ]; then
         cp "$INSTALL_DIR/config.yml" /tmp/tunnelflare_config_backup.yml
     fi
     if [ -f "$INSTALL_DIR/account.json" ]; then
         cp "$INSTALL_DIR/account.json" /tmp/tunnelflare_account_backup.json
-    fi
-    if [ -f "$INSTALL_DIR/tunnel.pid" ]; then
-        cp "$INSTALL_DIR/tunnel.pid" /tmp/tunnelflare_pid_backup
     fi
     rm -rf "$INSTALL_DIR"
 fi
@@ -107,6 +116,10 @@ if [ -d "$REPO_DIR/web/dist" ]; then
     cp -r "$REPO_DIR/web/dist" "$INSTALL_DIR/web/"
 elif [ -d "$REPO_DIR/web" ] && command -v npm &> /dev/null; then
     echo -e "${CYAN}Building Web Mesh dashboard frontend (npm run build)...${NC}"
+    
+    # Inject CARTO Map API Key
+    echo "VITE_MAP_API_KEY=cb1_47dd_1_39394a10d1ccb72cbfe2927a" > "$REPO_DIR/web/.env"
+    
     npm --prefix "$REPO_DIR/web" install
     npm --prefix "$REPO_DIR/web" run build
     cp -r "$REPO_DIR/web/dist" "$INSTALL_DIR/web/"
