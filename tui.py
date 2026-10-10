@@ -491,6 +491,11 @@ class TopologyWidget(Static):
                 lines = f.readlines()[-15:]
                 for line in lines:
                     line_lower = line.lower()
+                    
+                    # Ignore old shutdown logs so they don't break the UI on next launch
+                    if any(x in line_lower for x in ["shutting down", "context canceled", "client disconnected", "connection terminated", "connection with edge closed"]):
+                        continue
+                        
                     if any(k in line_lower for k in ["err", "error", "failed", "fatal"]):
                         return "error"
                     if any(k in line_lower for k in ["warn", "retrying"]):
@@ -1130,6 +1135,7 @@ class TunnelFlareApp(App):
                     raw_view.write(self.format_log_line(line))
 
             if has_new:
+                self.healing_engine.evaluate_health(tunnel_running)
                 self.query_one("#stage_hud", StageHUDWidget).refresh()
 
             if self.auto_scroll_enabled:
@@ -1137,9 +1143,10 @@ class TunnelFlareApp(App):
                     curated_view.scroll_end(animate=False)
                 else:
                     raw_view.scroll_end(animate=False)
-        except Exception:
-            pass
-
+        except Exception as e:
+            with open("/tmp/tui_error.log", "a") as f:
+                import traceback
+                f.write(traceback.format_exc() + "\n")
     def format_curated_event(self, event: ParsedLogEvent) -> Text:
         """Render high-contrast, stage-badged log line."""
         txt = Text()
@@ -1252,8 +1259,14 @@ class TunnelFlareApp(App):
 
     def heal_restart_callback(self, opts: dict) -> bool:
         """Invoked by healing engine to remediate anomalies (e.g. protocol fallback)."""
+        with open("/tmp/tui_debug.log", "a") as f:
+            f.write(f"heal_restart_callback called with {opts}\n")
         protocol = opts.get("protocol")
-        self.restart_tunnel_async(protocol=protocol)
+        try:
+            self.restart_tunnel_async(protocol=protocol)
+        except Exception as e:
+            with open("/tmp/tui_debug.log", "a") as f:
+                f.write(f"Exception in restart_tunnel_async: {e}\n")
         return True
 
     # ------------------------------------------------------------------------

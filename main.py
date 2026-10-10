@@ -1,3 +1,7 @@
+import sys
+if sys.argv:
+    sys.argv[0] = "tunnelflare"
+
 import typer
 import time
 import random
@@ -26,7 +30,7 @@ from rich import box
 import utils
 from utils import check_cloudflared_installed, install_cloudflared, run_command
 
-app = typer.Typer()
+app = typer.Typer(name="tunnelflare")
 console = Console()
 
 CLOUDFLARE_ORANGE = "#F38020"
@@ -888,5 +892,5 @@ def mesh_route_del(
 
 if __name__ == "__main__":
 
-    app()
+    app(prog_name="tunnelflare")
 

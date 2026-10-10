@@ -9,6 +9,10 @@ import enum
 import logging
 from pathlib import Path
 import time
+import threading
+import subprocess
+import requests
+import yaml
 from typing import Callable, List, Optional
 
 from log_parser import LogParser, ParsedLogEvent
@@ -62,6 +66,10 @@ class HealingEngine:
         self.quic_failure_count = 0
         self.circuit_tripped = False
         self.trip_reason = ""
+        
+        # Start the background watchdog thread for smart auto-fix
+        self.watchdog_thread = threading.Thread(target=self._watchdog_loop, daemon=True)
+        self.watchdog_thread.start()
 
     def set_armed(self, armed: bool) -> None:
         """Toggle autonomous healing mode."""
@@ -139,6 +147,10 @@ class HealingEngine:
             return None
 
         lower_msg = event.message.lower()
+        
+        with open("/tmp/healer_debug.log", "a") as f:
+            f.write(f"process_event: {event.message}\n")
+            f.write(f"active_protocol: {self.active_protocol}, is_armed: {self.is_armed}\n")
 
         # -------------------------------------------------------------
         # SIGNATURE 1: AUTHENTICATION / TOKEN REVOCATION (FATAL)
@@ -161,13 +173,42 @@ class HealingEngine:
         is_quic_fail = (
             (event.stage == "PRECHECK" and "UDP / QUIC Connectivity" in event.message and "FAIL" in event.message)
             or ("quic: timeout" in lower_msg)
+            or ("failed to dial a quic connection" in lower_msg)
             or ("quic connection failed" in lower_msg)
         )
 
         if is_quic_fail and self.active_protocol == "quic":
+            self.parser.precheck.udp = "fail"
             self.quic_failure_count += 1
             if self.quic_failure_count >= 1 and self._can_execute_action():
-                return self._execute_protocol_fallback()
+                return self._execute_protocol_switch("http2", "UDP_QUIC_FAIL", "Switched protocol from QUIC to HTTP/2 due to UDP packet loss / firewall block.")
+
+        # -------------------------------------------------------------
+        # SIGNATURE 4: HTTP/2 FAILURE (FALLBACK TO QUIC)
+        # -------------------------------------------------------------
+        is_h2_fail = (
+            (event.stage == "PRECHECK" and "TCP Connectivity" in event.message and "FAIL" in event.message)
+            or ("failed to dial to edge with h2" in lower_msg)
+            or ("failed to dial a h2 connection" in lower_msg)
+            or ("http2 connection failed" in lower_msg)
+            or ("dial tcp" in lower_msg and "connection refused" in lower_msg and "edge" in lower_msg)
+        )
+
+        if is_h2_fail and self.active_protocol == "http2":
+            self.parser.precheck.tcp = "fail"
+            if self._can_execute_action():
+                return self._execute_protocol_switch("quic", "TCP_H2_FAIL", "Switched protocol from HTTP/2 to QUIC due to TCP/H2 failure.")
+
+        # -------------------------------------------------------------
+        # SIGNATURE 5: QUIC RECOVERY (UPGRADE TO QUIC)
+        # -------------------------------------------------------------
+        is_quic_pass = (
+            event.stage == "PRECHECK" and "UDP / QUIC Connectivity" in event.message and "PASS" in event.message
+        )
+
+        if is_quic_pass and self.active_protocol == "http2":
+            if self._can_execute_action():
+                return self._execute_protocol_switch("quic", "QUIC_RECOVERY", "Upgraded protocol from HTTP/2 back to QUIC (UDP connectivity restored).")
 
         # -------------------------------------------------------------
         # SIGNATURE 3: TOTAL EDGE DISCONNECTION (ALL 4 CONNS LOST)
@@ -179,22 +220,21 @@ class HealingEngine:
 
         return None
 
-    def _execute_protocol_fallback(self) -> HealingActionRecord:
-        """Remediation Playbook 1: Switch protocol from QUIC to HTTP/2 and restart."""
+    def _execute_protocol_switch(self, target_protocol: str, trigger: str, action_msg: str) -> HealingActionRecord:
+        """Remediation Playbook: Switch active protocol and restart."""
         self.state = HealthFSMState.HEALING
         self.last_action_time = time.time()
-        self.active_protocol = "http2"
+        self.active_protocol = target_protocol
 
-        action_msg = "Switched protocol from QUIC to HTTP/2 due to UDP packet loss / firewall block."
         success = False
 
         if self.restart_callback:
-            success = self.restart_callback({"protocol": "http2"})
+            success = self.restart_callback({"protocol": target_protocol})
 
         record = HealingActionRecord(
             timestamp=self.last_action_time,
-            trigger="UDP_QUIC_FAIL",
-            action_taken="PROTOCOL_FALLBACK_HTTP2",
+            trigger=trigger,
+            action_taken=f"PROTOCOL_FALLBACK_{target_protocol.upper()}",
             status="SUCCESS" if success else "FAILED",
             details=action_msg,
         )
@@ -214,7 +254,10 @@ class HealingEngine:
         """Remediation Playbook 2: Soft restart/reconnect tunnel when all edge connections drop."""
         self.state = HealthFSMState.HEALING
         self.last_action_time = time.time()
-        action_msg = f"Initiating edge re-establishment sequence (Trigger: {trigger})."
+        
+        # Reset to primary protocol (QUIC) on any full mesh reconnect
+        self.active_protocol = "quic"
+        action_msg = f"Initiating edge re-establishment sequence using QUIC (Trigger: {trigger})."
         success = False
 
         if self.restart_callback:
@@ -254,3 +297,110 @@ class HealingEngine:
                 f"{last_action.action_taken} ({last_action.status})" if last_action else "None (Nominal)"
             ),
         }
+
+    def _watchdog_loop(self):
+        """Background thread running sensors for smart auto-fix."""
+        last_http_probe = 0
+        while True:
+            time.sleep(5)
+            if not self.is_armed or self.state == HealthFSMState.STOPPED:
+                continue
+
+            try:
+                tunnel_id = None
+                if CONFIG_FILE.exists():
+                    with open(CONFIG_FILE, "r") as f:
+                        cfg = yaml.safe_load(f)
+                        if cfg:
+                            tunnel_id = cfg.get("tunnel")
+                
+                if tunnel_id:
+                    # Sensor A: Ghost Process Detector
+                    cmd = f"pgrep -f 'cloudflared tunnel.*run {tunnel_id}'"
+                    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+                    pids = [p for p in result.stdout.strip().split("\n") if p]
+                    if len(pids) > 1:
+                        self._execute_smart_autofix("GHOST_PROCESS_CONFLICT", tunnel_id)
+                        continue 
+
+                    # Sensor B: Synthetic Edge Probing
+                    now = time.time()
+                    if now - last_http_probe > 60:
+                        last_http_probe = now
+                        if self.state == HealthFSMState.HEALTHY:
+                            endpoints = []
+                            if cfg and "ingress" in cfg:
+                                for rule in cfg["ingress"]:
+                                    host = rule.get("hostname", "*")
+                                    if host != "*" and not host.endswith("[Site-to-Site]"):
+                                        endpoints.append(f"https://{host}")
+                            
+                            desync_detected = False
+                            for ep in endpoints:
+                                try:
+                                    resp = requests.head(ep, timeout=5)
+                                    if resp.status_code == 530:
+                                        desync_detected = True
+                                        break
+                                except Exception:
+                                    pass
+                            
+                            if desync_detected:
+                                self._execute_smart_autofix("EDGE_DESYNC", tunnel_id)
+            except Exception as e:
+                with open("/tmp/healer_debug.log", "a") as f:
+                    f.write(f"Ghost process watchdog error: {e}\n")
+
+    def _execute_smart_autofix(self, trigger: str, tunnel_id: str) -> None:
+        """Remediation Playbook for Ghost Processes and Edge Desync."""
+        if not self._can_execute_action():
+            return
+            
+        self.state = HealthFSMState.HEALING
+        self.last_action_time = time.time()
+        
+        action_msg = f"Smart Auto-Fix Executing: {trigger} detected."
+        if self.notify_callback:
+            self.notify_callback(f"Auto-Heal: {action_msg}", "warning")
+            
+        try:
+            # 1. Nuclear Termination
+            subprocess.run(f"pkill -9 -f 'cloudflared tunnel.*{tunnel_id}'", shell=True)
+            time.sleep(1)
+            
+            # 2. DNS State Sync
+            if CONFIG_FILE.exists():
+                with open(CONFIG_FILE, "r") as f:
+                    cfg = yaml.safe_load(f)
+                    if cfg and "ingress" in cfg:
+                        for rule in cfg["ingress"]:
+                            host = rule.get("hostname", "*")
+                            if host != "*" and not host.endswith("[Site-to-Site]"):
+                                subprocess.run(
+                                    ["cloudflared", "tunnel", "route", "dns", "--overwrite-dns", tunnel_id, host],
+                                    check=False,
+                                    capture_output=True
+                                )
+                                
+            # 3. Clean Boot
+            success = False
+            if self.restart_callback:
+                self.active_protocol = "quic"
+                success = self.restart_callback({"protocol": self.active_protocol})
+                
+            record = HealingActionRecord(
+                timestamp=self.last_action_time,
+                trigger=trigger,
+                action_taken="SMART_AUTO_FIX_RESTART",
+                status="SUCCESS" if success else "FAILED",
+                details=action_msg,
+            )
+            self.action_history.append(record)
+            
+            self.parser.parse_line(
+                f"{time.strftime('%Y-%m-%dT%H:%M:%SZ')} INF [HEALER] {action_msg} Status: {'APPLIED' if success else 'FAILED'}"
+            )
+            
+        except Exception as e:
+            with open("/tmp/healer_debug.log", "a") as f:
+                f.write(f"Smart autofix error: {e}\n")
