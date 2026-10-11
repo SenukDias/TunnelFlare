@@ -62,11 +62,13 @@ export const WorldMap: React.FC<WorldMapProps> = ({ nodesList, linksList }) => {
       const lng = node.longitude || 0.0;
       bounds.push([lat, lng]);
 
-      // Custom pulsing HTML marker
+      // Marker for each site (gray when offline, animated when online)
       const isLocal = node.is_local;
-      const ringColor = isLocal ? 'var(--cyan)' : 'var(--cf-orange)';
+      const isOffline = node.status === 'offline';
+      const ringColor = isOffline ? '#71717a' : isLocal ? 'var(--cyan)' : 'var(--cf-orange)';
       const markerHtml = `
-        <div style="position: relative; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;">
+        <div style="position: relative; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; opacity: ${isOffline ? 0.65 : 1};">
+          ${!isOffline ? `
           <div style="
             position: absolute; 
             width: 100%; 
@@ -75,14 +77,14 @@ export const WorldMap: React.FC<WorldMapProps> = ({ nodesList, linksList }) => {
             background: ${ringColor}; 
             opacity: 0.35; 
             animation: radarWave 2s infinite ease-out;
-          "></div>
+          "></div>` : ''}
           <div style="
             width: 14px; 
             height: 14px; 
             border-radius: 50%; 
             background: ${ringColor}; 
-            border: 2px solid #fff; 
-            box-shadow: 0 0 12px ${ringColor};
+            border: 2px solid ${isOffline ? '#52525b' : '#fff'}; 
+            box-shadow: ${isOffline ? 'none' : `0 0 12px ${ringColor}`};
           "></div>
         </div>
       `;

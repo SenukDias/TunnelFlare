@@ -477,8 +477,11 @@ async def get_mesh_nodes(refresh: bool = False) -> Dict[str, Any]:
     if not is_local_found:
         nodes.insert(0, _build_local_node(node_status))
 
-    # ── Build mesh links (only between tunnels that share a VNet or have routes) ──
-    active_nodes = [n for n in nodes if n["tunnel_status"] not in ("inactive", "offline") or n["is_local"]]
+    # ── Build mesh links (ONLY between active online nodes) ────────────────
+    active_nodes = [
+        n for n in nodes
+        if n.get("status") in ("healthy", "warning") and n.get("tunnel_status") not in ("inactive", "offline", "down")
+    ]
     links: List[Dict[str, Any]] = []
 
     for i, src in enumerate(active_nodes):

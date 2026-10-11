@@ -54,31 +54,66 @@ const LAYOUT_LABELS: Record<LayoutMode, { label: string; icon: React.ReactNode }
 
 function computeLayout(nodes: MeshNode[], mode: LayoutMode): Record<string, { x: number; y: number }> {
   const positions: Record<string, { x: number; y: number }> = {};
-  const local = nodes.find((n) => n.is_local);
-  const remotes = nodes.filter((n) => !n.is_local);
+  const onlineNodes = nodes.filter((n) => n.status !== 'offline');
+  const offlineNodes = nodes.filter((n) => n.status === 'offline');
+
+  const onlineLocal = onlineNodes.find((n) => n.is_local);
+  const onlineRemotes = onlineNodes.filter((n) => !n.is_local);
+
+  let maxOnlineY = 120;
 
   if (mode === 'hub-spoke') {
-    // Local left, remotes fanned right
-    if (local) positions[local.id] = { x: 60, y: 160 + (remotes.length * 140) / 2 - 70 };
-    remotes.forEach((n, i) => {
-      positions[n.id] = { x: 480, y: 60 + i * 200 };
+    // Local left, online remotes fanned right
+    if (onlineLocal) {
+      const centerY = onlineRemotes.length > 0
+        ? 60 + ((onlineRemotes.length - 1) * 200) / 2
+        : 120;
+      positions[onlineLocal.id] = { x: 60, y: Math.max(60, centerY) };
+      maxOnlineY = Math.max(maxOnlineY, positions[onlineLocal.id].y + 200);
+    }
+    onlineRemotes.forEach((n, i) => {
+      const y = 60 + i * 200;
+      positions[n.id] = { x: 480, y };
+      maxOnlineY = Math.max(maxOnlineY, y + 200);
     });
   } else if (mode === 'bidirectional') {
-    // All nodes in a horizontal chain
-    nodes.forEach((n, i) => {
-      positions[n.id] = { x: 80 + i * 320, y: 200 };
+    // All online nodes in a horizontal chain
+    onlineNodes.forEach((n, i) => {
+      const x = 80 + i * 320;
+      const y = 140;
+      positions[n.id] = { x, y };
+      maxOnlineY = Math.max(maxOnlineY, y + 200);
     });
   } else {
-    // Full mesh — circular layout
-    const cx = 400, cy = 280, r = 220;
-    nodes.forEach((n, i) => {
-      const angle = (2 * Math.PI * i) / nodes.length - Math.PI / 2;
-      positions[n.id] = {
-        x: cx + r * Math.cos(angle),
-        y: cy + r * Math.sin(angle),
-      };
-    });
+    // Full mesh — circular layout for online nodes
+    if (onlineNodes.length <= 1) {
+      onlineNodes.forEach((n) => {
+        positions[n.id] = { x: 340, y: 120 };
+        maxOnlineY = Math.max(maxOnlineY, 320);
+      });
+    } else {
+      const cx = 380, cy = 180, r = Math.min(220, 100 + onlineNodes.length * 30);
+      onlineNodes.forEach((n, i) => {
+        const angle = (2 * Math.PI * i) / onlineNodes.length - Math.PI / 2;
+        const x = cx + r * Math.cos(angle);
+        const y = cy + r * Math.sin(angle);
+        positions[n.id] = { x, y };
+        maxOnlineY = Math.max(maxOnlineY, y + 200);
+      });
+    }
   }
+
+  // ── Position offline nodes docked at the bottom in gray ────────────────
+  const offlineStartY = Math.max(460, maxOnlineY + 80);
+  offlineNodes.forEach((n, i) => {
+    const col = i % 4;
+    const row = Math.floor(i / 4);
+    positions[n.id] = {
+      x: 60 + col * 290,
+      y: offlineStartY + row * 220,
+    };
+  });
+
   return positions;
 }
 
@@ -133,28 +168,35 @@ export const MeshCanvas: React.FC<MeshCanvasProps> = ({
     [nodesList, layoutPositions, onAccessApp]
   );
 
-  const initialEdges: Edge[] = useMemo(() =>
-    linksList.map((link, i) => ({
-      id: `edge-${link.source}-${link.target}-${i}`,
-      source: link.source,
-      target: link.target,
-      sourceHandle: 'right',
-      targetHandle: 'left-tgt',
-      type: 'flowEdge',
-      data: {
-        rtt_ms: link.rtt_ms,
-        packet_loss: link.packet_loss,
-        status: link.status === 'active'
-          ? (link.packet_loss > 0.5 ? 'degraded' : 'active')
-          : 'error',
-        onDisconnect: (edgeId: string) => {
-          setEdges((eds) => eds.filter((e) => e.id !== edgeId));
-          onDeleteLink?.(link.source, link.target);
+  // Filter edges so offline nodes NEVER have active connection links
+  const initialEdges: Edge[] = useMemo(() => {
+    const isOnline = (id: string) => {
+      const n = nodesList.find((x) => x.id === id);
+      return n && n.status !== 'offline';
+    };
+
+    return linksList
+      .filter((link) => isOnline(link.source) && isOnline(link.target))
+      .map((link, i) => ({
+        id: `edge-${link.source}-${link.target}-${i}`,
+        source: link.source,
+        target: link.target,
+        sourceHandle: 'right',
+        targetHandle: 'left-tgt',
+        type: 'flowEdge',
+        data: {
+          rtt_ms: link.rtt_ms,
+          packet_loss: link.packet_loss,
+          status: link.status === 'active'
+            ? (link.packet_loss > 0.5 ? 'degraded' : 'active')
+            : 'error',
+          onDisconnect: (edgeId: string) => {
+            setEdges((eds) => eds.filter((e) => e.id !== edgeId));
+            onDeleteLink?.(link.source, link.target);
+          },
         },
-      },
-    })),
-    [linksList, onDeleteLink]
-  );
+      }));
+  }, [linksList, nodesList, onDeleteLink]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
@@ -176,6 +218,10 @@ export const MeshCanvas: React.FC<MeshCanvasProps> = ({
       const src = nodesList.find((n) => n.id === params.source);
       const tgt = nodesList.find((n) => n.id === params.target);
       if (src && tgt) {
+        // Disallow connecting to or from offline nodes
+        if (src.status === 'offline' || tgt.status === 'offline') {
+          return;
+        }
         setEdges((eds) => addEdge({
           ...params,
           type: 'flowEdge',
@@ -185,6 +231,17 @@ export const MeshCanvas: React.FC<MeshCanvasProps> = ({
       }
     },
     [nodesList, onConnectSites, setEdges]
+  );
+
+  const isValidConnection = useCallback(
+    (connection: Connection | Edge) => {
+      const src = nodesList.find((n) => n.id === connection.source);
+      const tgt = nodesList.find((n) => n.id === connection.target);
+      if (!src || !tgt) return false;
+      if (src.status === 'offline' || tgt.status === 'offline') return false;
+      return src.id !== tgt.id;
+    },
+    [nodesList]
   );
 
   const onEdgeContextMenu: EdgeMouseHandler = useCallback((e, edge) => {
@@ -250,6 +307,7 @@ export const MeshCanvas: React.FC<MeshCanvasProps> = ({
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
+        isValidConnection={isValidConnection}
         onEdgeContextMenu={onEdgeContextMenu}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
@@ -281,7 +339,7 @@ export const MeshCanvas: React.FC<MeshCanvasProps> = ({
             if (!site) return '#27272a';
             if (site.status === 'healthy') return '#2dd4bf';
             if (site.status === 'warning') return '#f59e0b';
-            return '#3f3f46';
+            return '#52525b';
           }}
           maskColor="rgba(9,9,11,0.85)"
           position="bottom-left"
@@ -297,7 +355,7 @@ export const MeshCanvas: React.FC<MeshCanvasProps> = ({
             {[
               { label: 'Connected', color: '#2dd4bf' },
               { label: 'Degraded',  color: '#f59e0b' },
-              { label: 'Offline',   color: '#3f3f46' },
+              { label: 'Offline (Standby)', color: '#71717a' },
             ].map(({ label, color }) => (
               <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                 <span style={{ width: 6, height: 6, borderRadius: '50%', background: color, display: 'block' }} />

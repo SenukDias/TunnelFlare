@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Navbar } from './components/Navbar';
 import { MeshCanvas } from './components/MeshCanvas';
 import { WorldMap } from './components/WorldMap';
@@ -279,6 +279,15 @@ const AppInner: React.FC = () => {
       setNodeStatus({ ...nodeStatus, ip_forwarding: data.ip_forwarding });
   };
 
+  const activeLinks = useMemo(() => {
+    const offlineIds = new Set(
+      meshNodes.filter((n) => n.status === 'offline').map((n) => n.id)
+    );
+    return meshLinks.filter(
+      (l) => !offlineIds.has(l.source) && !offlineIds.has(l.target)
+    );
+  }, [meshNodes, meshLinks]);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: 'var(--bg-base)', overflow: 'hidden' }}>
       <Navbar
@@ -286,7 +295,7 @@ const AppInner: React.FC = () => {
         setActiveTab={setActiveTab}
         telemetry={telemetry}
         nodeStatus={nodeStatus}
-        activeConnectionCount={meshLinks.length}
+        activeConnectionCount={activeLinks.length}
 
         onRefresh={() => { fetchStatus(); fetchMesh(true); }}
       />
@@ -296,7 +305,7 @@ const AppInner: React.FC = () => {
         {activeTab === 'canvas' && (
           <MeshCanvas
             nodesList={meshNodes}
-            linksList={meshLinks}
+            linksList={activeLinks}
             onConnectSites={handleConnectSites}
             onOpenAddSiteModal={() => setIsAddSiteModalOpen(true)}
             onDeleteLink={handleDeleteLink}
@@ -311,7 +320,7 @@ const AppInner: React.FC = () => {
 
         {activeTab === 'map' && (
           <div style={{ padding: '1rem', height: '100%' }}>
-            <WorldMap nodesList={meshNodes} linksList={meshLinks} />
+            <WorldMap nodesList={meshNodes} linksList={activeLinks} />
           </div>
         )}
 
