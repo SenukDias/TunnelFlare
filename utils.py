@@ -1,8 +1,14 @@
+import json
+import os
+import platform
 import shutil
+import signal
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
+
+import requests
 from rich.console import Console
 
 console = Console()
@@ -11,7 +17,6 @@ def check_cloudflared_installed() -> bool:
     """Check if cloudflared is installed and available in PATH."""
     return shutil.which("cloudflared") is not None
 
-import platform
 
 def get_system_architecture() -> str:
     """Detect system architecture reliably across Linux distributions."""
@@ -98,11 +103,6 @@ def run_command(command: list[str], check: bool = True, capture_output: bool = T
         if check:
             raise e
         return None
-
-
-import json
-import re
-import requests
 
 
 def get_active_interfaces() -> list[dict]:
@@ -329,7 +329,6 @@ def terminate_stray_tunnel_daemons(tunnel_id: Optional[str] = None) -> int:
     instances running for the given tunnel_id (or all tunnels if None).
     Returns count of terminated processes.
     """
-    import signal
     count = 0
     pids = find_competing_tunnel_daemons(tunnel_id)
     for pid in pids:

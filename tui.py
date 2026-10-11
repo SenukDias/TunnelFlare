@@ -19,6 +19,7 @@ from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical
 from textual.screen import ModalScreen
 
+import utils
 from healing_engine import HealingEngine, HealthFSMState
 from log_parser import LogParser, ParsedLogEvent, resolve_pop_name
 from textual.widgets import (
