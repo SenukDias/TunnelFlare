@@ -7,3 +7,4 @@ requests
 fastapi
 uvicorn[standard]
 pydantic
+httpx

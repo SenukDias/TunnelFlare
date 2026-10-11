@@ -10,6 +10,7 @@ interface SiteNodeProps {
   data: {
     node: MeshNode;
     onContextMenu?: (e: React.MouseEvent, nodeId: string) => void;
+    onAccessApp?: (node: MeshNode) => void;
   };
   selected?: boolean;
 }
@@ -197,9 +198,36 @@ export const SiteNode: React.FC<SiteNodeProps> = ({ data, selected }) => {
         <span style={{ fontSize: 10, color: 'var(--text-3)' }}>
           {node.routes?.length ?? 0} routes
         </span>
-        <span style={{ fontSize: 10, color: 'var(--text-3)', fontStyle: 'italic' }}>
-          Drag handle to connect →
-        </span>
+        {!node.is_local ? (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              data.onAccessApp?.(node);
+            }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+              background: 'rgba(45, 212, 191, 0.12)',
+              border: '1px solid rgba(45, 212, 191, 0.3)',
+              borderRadius: 4,
+              color: '#2dd4bf',
+              fontSize: 10,
+              fontWeight: 600,
+              padding: '2px 7px',
+              cursor: 'pointer',
+              transition: 'background 0.15s, border-color 0.15s',
+            }}
+            title="Access remote web application via private IP through TunnelFlare"
+          >
+            <Globe size={10} color="#2dd4bf" />
+            Web App
+          </button>
+        ) : (
+          <span style={{ fontSize: 10, color: 'var(--text-3)', fontStyle: 'italic' }}>
+            Local Gateway
+          </span>
+        )}
       </div>
     </div>
   );

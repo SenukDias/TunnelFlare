@@ -41,6 +41,7 @@ interface MeshCanvasProps {
   onDeleteLink?: (source: string, target: string) => void;
   onPingNode?: (nodeId: string) => void;
   onOpenHistory?: () => void;
+  onAccessApp?: (node: MeshNode) => void;
 }
 
 type LayoutMode = 'hub-spoke' | 'bidirectional' | 'mesh';
@@ -89,6 +90,7 @@ export const MeshCanvas: React.FC<MeshCanvasProps> = ({
   onDeleteLink,
   onPingNode,
   onOpenHistory,
+  onAccessApp,
 }) => {
   const [layoutMode, setLayoutMode] = useState<LayoutMode>('hub-spoke');
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
@@ -123,9 +125,12 @@ export const MeshCanvas: React.FC<MeshCanvasProps> = ({
             sublabel: n?.lan_cidr,
           });
         },
+        onAccessApp: (n: MeshNode) => {
+          onAccessApp?.(n);
+        },
       },
     })),
-    [nodesList, layoutPositions]
+    [nodesList, layoutPositions, onAccessApp]
   );
 
   const initialEdges: Edge[] = useMemo(() =>
@@ -388,6 +393,14 @@ export const MeshCanvas: React.FC<MeshCanvasProps> = ({
           onPing={
             contextMenu.type === 'node' && contextMenu.nodeId
               ? () => onPingNode?.(contextMenu.nodeId!)
+              : undefined
+          }
+          onAccessApp={
+            contextMenu.type === 'node' && contextMenu.nodeId
+              ? () => {
+                  const n = nodesList.find((x) => x.id === contextMenu.nodeId);
+                  if (n) onAccessApp?.(n);
+                }
               : undefined
           }
         />

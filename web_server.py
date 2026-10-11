@@ -14,10 +14,11 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+import httpx
 
 import cloudflare_api
 import utils
@@ -667,6 +668,268 @@ async def ping_tunnel_node(tunnel_id: str) -> Dict[str, Any]:
         "reachable": True,
         "timestamp": time.time(),
     }
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Point-to-Point Connector Management
+# ──────────────────────────────────────────────────────────────────────────────
+class CreateConnectorRequest(BaseModel):
+    site_name: str
+    lan_cidr: Optional[str] = "10.200.0.0/24"
+    comment: Optional[str] = "TunnelFlare Point-to-Point Connector"
+    auto_route: Optional[bool] = True
+
+
+@app.post("/api/v1/connector/create")
+async def create_connector(req: CreateConnectorRequest) -> Dict[str, Any]:
+    """
+    Provision a new Point-to-Point Tunnel Connector for a remote site.
+    Generates connector token and one-line setup scripts for Docker and Linux.
+    """
+    account = cloudflare_api.load_account_config()
+    if not account:
+        raise HTTPException(status_code=401, detail="Cloudflare account is not linked.")
+
+    client = cloudflare_api.CloudflareClient(
+        token=account["token"], account_id=account["account_id"]
+    )
+    loop = asyncio.get_event_loop()
+
+    try:
+        tunnel = await loop.run_in_executor(
+            None, lambda: client.create_tunnel(name=req.site_name)
+        )
+        tunnel_id = tunnel.get("id")
+        if not tunnel_id:
+            raise HTTPException(status_code=500, detail="Failed to retrieve tunnel ID from Cloudflare.")
+
+        token = await loop.run_in_executor(
+            None, lambda: client.get_tunnel_token(tunnel_id)
+        )
+
+        # Optionally pre-register the CIDR route if provided
+        route_info = None
+        if req.auto_route and req.lan_cidr:
+            try:
+                route_info = await loop.run_in_executor(
+                    None,
+                    lambda: client.add_cidr_route(
+                        network=req.lan_cidr,
+                        tunnel_id=tunnel_id,
+                        comment=req.comment or f"P2P Route for {req.site_name}",
+                        virtual_network_id=account.get("default_vnet_id"),
+                    ),
+                )
+            except Exception:
+                pass  # Route can be added subsequently once connector is online
+
+        docker_cmd = (
+            f"docker run -d --restart always "
+            f"--name {req.site_name.lower().replace(' ', '-')}-connector "
+            f"--network host cloudflare/cloudflared:latest tunnel --no-autoupdate run --token {token}"
+        )
+        linux_cmd = (
+            f"curl -L --output cloudflared.deb "
+            f"https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb "
+            f"&& sudo dpkg -i cloudflared.deb && sudo cloudflared service install {token}"
+        )
+
+        # Invalidate cache
+        global _mesh_cache, _mesh_cache_ts
+        _mesh_cache = None
+        _mesh_cache_ts = 0.0
+
+        return {
+            "success": True,
+            "tunnel_id": tunnel_id,
+            "site_name": req.site_name,
+            "lan_cidr": req.lan_cidr,
+            "token": token,
+            "install_commands": {
+                "docker": docker_cmd,
+                "linux_service": linux_cmd,
+                "standalone": f"cloudflared tunnel run --token {token}",
+            },
+            "route": route_info,
+        }
+    except cloudflare_api.CloudflareAPIError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Unexpected error creating connector: {e}")
+
+
+@app.get("/api/v1/connector/status/{tunnel_id}")
+async def get_connector_status(tunnel_id: str) -> Dict[str, Any]:
+    """Check live heartbeat & connection status of a remote connector."""
+    account = cloudflare_api.load_account_config()
+    if not account:
+        raise HTTPException(status_code=401, detail="Cloudflare account is not linked.")
+
+    client = cloudflare_api.CloudflareClient(
+        token=account["token"], account_id=account["account_id"]
+    )
+    loop = asyncio.get_event_loop()
+    try:
+        conns = await loop.run_in_executor(
+            None, lambda: client.get_tunnel_connections(tunnel_id)
+        )
+        is_connected = len(conns) > 0
+        return {
+            "tunnel_id": tunnel_id,
+            "connected": is_connected,
+            "status": "healthy" if is_connected else "waiting",
+            "connection_count": len(conns),
+            "colo": conns[0].get("colo_name") if conns else None,
+            "client_version": conns[0].get("client_version") if conns else None,
+        }
+    except Exception as e:
+        return {
+            "tunnel_id": tunnel_id,
+            "connected": False,
+            "status": "offline",
+            "error": str(e),
+        }
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Private IP Gateway & In-Browser Proxy
+# ──────────────────────────────────────────────────────────────────────────────
+@app.get("/api/v1/gateway/test-reach")
+async def test_gateway_reachability(ip: str, port: int = 80, timeout: float = 3.0) -> Dict[str, Any]:
+    """Test TCP socket reachability to a remote private IP across the mesh."""
+    start = time.perf_counter()
+    try:
+        reader, writer = await asyncio.wait_for(
+            asyncio.open_connection(ip, port),
+            timeout=timeout
+        )
+        writer.close()
+        try:
+            await writer.wait_closed()
+        except Exception:
+            pass
+        elapsed_ms = round((time.perf_counter() - start) * 1000, 2)
+        return {
+            "reachable": True,
+            "ip": ip,
+            "port": port,
+            "rtt_ms": elapsed_ms,
+            "error": None,
+        }
+    except asyncio.TimeoutError:
+        return {
+            "reachable": False,
+            "ip": ip,
+            "port": port,
+            "rtt_ms": -1,
+            "error": f"Connection timed out after {timeout}s (Host unreachable)",
+        }
+    except Exception as e:
+        return {
+            "reachable": False,
+            "ip": ip,
+            "port": port,
+            "rtt_ms": -1,
+            "error": str(e),
+        }
+
+
+@app.api_route(
+    "/api/v1/gateway/proxy/{target_ip}/{target_port}",
+    methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"],
+)
+@app.api_route(
+    "/api/v1/gateway/proxy/{target_ip}/{target_port}/{path:path}",
+    methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"],
+)
+async def gateway_proxy_handler(
+    target_ip: str,
+    target_port: int,
+    request: Request,
+    path: str = "",
+):
+    """
+    Transparent HTTP Reverse Proxy Relay.
+    Relays browser requests to remote private IPs across the Zero Trust Mesh,
+    rewriting Location headers and injecting base URLs for HTML pages.
+    """
+    clean_path = path.lstrip("/")
+    target_url = f"http://{target_ip}:{target_port}/{clean_path}"
+
+    exclude_req_headers = {"host", "content-length", "connection", "upgrade", "transfer-encoding"}
+    req_headers = {
+        k: v for k, v in request.headers.items()
+        if k.lower() not in exclude_req_headers
+    }
+    req_headers["host"] = f"{target_ip}:{target_port}"
+
+    body = await request.body()
+    params = list(request.query_params.multi_items())
+
+    async with httpx.AsyncClient(follow_redirects=False, timeout=20.0) as client:
+        try:
+            upstream_resp = await client.request(
+                method=request.method,
+                url=target_url,
+                params=params,
+                content=body if body else None,
+                headers=req_headers,
+            )
+        except httpx.ConnectTimeout:
+            raise HTTPException(
+                status_code=504,
+                detail=f"Gateway timeout: failed to connect to private IP {target_ip}:{target_port} within 20s"
+            )
+        except httpx.ConnectError as ce:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Bad Gateway: Unable to reach {target_ip}:{target_port} via mesh route. Ensure route is active ({ce})"
+            )
+        except Exception as e:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Gateway error communicating with {target_ip}:{target_port}: {e}"
+            )
+
+    exclude_resp_headers = {"transfer-encoding", "content-encoding", "content-length"}
+    resp_headers: Dict[str, str] = {}
+    for k, v in upstream_resp.headers.items():
+        if k.lower() not in exclude_resp_headers:
+            resp_headers[k] = v
+
+    proxy_base = f"/api/v1/gateway/proxy/{target_ip}/{target_port}/"
+
+    # Rewrite Location redirect header to keep browser inside proxy
+    if "location" in resp_headers:
+        loc = resp_headers["location"]
+        if loc.startswith(f"http://{target_ip}:{target_port}/"):
+            resp_headers["location"] = loc.replace(f"http://{target_ip}:{target_port}/", proxy_base)
+        elif loc.startswith("/"):
+            resp_headers["location"] = f"/api/v1/gateway/proxy/{target_ip}/{target_port}" + loc
+
+    content = upstream_resp.content
+    content_type = resp_headers.get("content-type", "")
+
+    # For HTML responses, inject <base href="..."> if not already present so relative paths resolve cleanly
+    if "text/html" in content_type:
+        try:
+            html_text = content.decode("utf-8", errors="replace")
+            if "<base " not in html_text.lower():
+                if "<head>" in html_text:
+                    html_text = html_text.replace("<head>", f'<head><base href="{proxy_base}">', 1)
+                elif "<HEAD>" in html_text:
+                    html_text = html_text.replace("<HEAD>", f'<HEAD><base href="{proxy_base}">', 1)
+                else:
+                    html_text = f'<base href="{proxy_base}">' + html_text
+                content = html_text.encode("utf-8")
+        except Exception:
+            pass
+
+    return Response(
+        content=content,
+        status_code=upstream_resp.status_code,
+        headers=resp_headers,
+    )
 
 
 # ──────────────────────────────────────────────────────────────────────────────

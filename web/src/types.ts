@@ -78,3 +78,37 @@ export interface TelemetryData {
   active_streams: number;
   edge_status: string;
 }
+
+export interface ConnectorInstallCommands {
+  docker: string;
+  linux_service: string;
+  standalone: string;
+}
+
+export interface CreateConnectorResponse {
+  success: boolean;
+  tunnel_id: string;
+  site_name: string;
+  lan_cidr?: string;
+  token: string;
+  install_commands: ConnectorInstallCommands;
+  route?: any;
+}
+
+export interface ConnectorStatus {
+  tunnel_id: string;
+  connected: boolean;
+  status: 'healthy' | 'waiting' | 'offline';
+  connection_count?: number;
+  colo?: string | null;
+  client_version?: string | null;
+  error?: string;
+}
+
+export interface ReachabilityResult {
+  reachable: boolean;
+  ip: string;
+  port: number;
+  rtt_ms: number;
+  error?: string | null;
+}

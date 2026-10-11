@@ -5,6 +5,8 @@ import { WorldMap } from './components/WorldMap';
 import { RouteManager } from './components/RouteManager';
 import { AccountModal } from './components/AccountModal';
 import { ConnectModal } from './components/ConnectModal';
+import { AddSiteModal } from './components/AddSiteModal';
+import { PrivateAppViewerModal } from './components/PrivateAppViewerModal';
 import { HistorySidebar } from './components/HistorySidebar';
 import { ToastProvider, useToast } from './components/Toast';
 import type { MeshNode, MeshLink, MeshRoute, NodeStatus, TelemetryData } from './types';
@@ -31,6 +33,9 @@ const AppInner: React.FC = () => {
   const [connectTarget, setConnectTarget] = useState<MeshNode | null>(null);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [historyEvents, setHistoryEvents] = useState<HistoryEvent[]>([]);
+  const [isAppViewerOpen, setIsAppViewerOpen] = useState(false);
+  const [appViewerNode, setAppViewerNode] = useState<MeshNode | null>(null);
+  const [isAddSiteModalOpen, setIsAddSiteModalOpen] = useState(false);
 
   // ── History helper ───────────────────────────────────────────────────────
   const addEvent = useCallback((type: EventType, title: string, detail?: string) => {
@@ -293,10 +298,14 @@ const AppInner: React.FC = () => {
             nodesList={meshNodes}
             linksList={meshLinks}
             onConnectSites={handleConnectSites}
-            onOpenAddSiteModal={() => setActiveTab('account')}
+            onOpenAddSiteModal={() => setIsAddSiteModalOpen(true)}
             onDeleteLink={handleDeleteLink}
             onPingNode={handlePingNode}
             onOpenHistory={() => setIsHistoryOpen((v) => !v)}
+            onAccessApp={(node) => {
+              setAppViewerNode(node);
+              setIsAppViewerOpen(true);
+            }}
           />
         )}
 
@@ -348,6 +357,26 @@ const AppInner: React.FC = () => {
         targetNode={connectTarget}
         allNodes={meshNodes}
         onConfirmConnect={handleConfirmConnect}
+      />
+
+      {/* Point-to-Point Connector Setup Wizard */}
+      <AddSiteModal
+        isOpen={isAddSiteModalOpen}
+        onClose={() => setIsAddSiteModalOpen(false)}
+        apiBase={API_BASE}
+        onSiteCreated={async () => {
+          showToast('New site connector provisioned!', 'success');
+          addEvent('connect', 'Connector Created', 'Point-to-point connector provisioned for remote site');
+          await fetchMesh(true);
+        }}
+      />
+
+      {/* Private IP Web App Viewer Modal */}
+      <PrivateAppViewerModal
+        isOpen={isAppViewerOpen}
+        onClose={() => setIsAppViewerOpen(false)}
+        targetNode={appViewerNode}
+        apiBase={API_BASE}
       />
     </div>
   );

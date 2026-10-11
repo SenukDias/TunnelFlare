@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 
-import { X, Zap, Copy, BarChart2, Wifi } from 'lucide-react';
+import { X, Zap, Copy, BarChart2, Wifi, Globe } from 'lucide-react';
 
 export interface ContextMenuProps {
   x: number;
@@ -12,12 +12,13 @@ export interface ContextMenuProps {
   onCopy?: () => void;
   onTelemetry?: () => void;
   onPing?: () => void;
+  onAccessApp?: () => void;
   onClose: () => void;
 }
 
 export const ContextMenu: React.FC<ContextMenuProps> = ({
   x, y, type, label, sublabel,
-  onDisconnect, onCopy, onTelemetry, onPing, onClose,
+  onDisconnect, onCopy, onTelemetry, onPing, onAccessApp, onClose,
 }) => {
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -95,6 +96,16 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
       {/* Node actions */}
       {type === 'node' && (
         <>
+          {onAccessApp && (
+            <button
+              className="context-menu-item"
+              style={{ color: '#2dd4bf', fontWeight: 500 }}
+              onClick={() => { onAccessApp(); onClose(); }}
+            >
+              <Globe size={13} color="#2dd4bf" />
+              Access Private Web App
+            </button>
+          )}
           {onPing && (
             <button className="context-menu-item" onClick={() => { onPing(); onClose(); }}>
               <Wifi size={13} color="var(--text-2)" />
