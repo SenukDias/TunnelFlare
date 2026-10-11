@@ -234,10 +234,15 @@ async def link_cloudflare_account(req: TokenAuthRequest) -> Dict[str, Any]:
         account_id = selected_account.get("id")
         account_name = selected_account.get("name", "Default Account")
     elif not account_id:
-        raise HTTPException(
-            status_code=400, 
-            detail="Could not auto-discover Cloudflare Account. Please provide your Account ID manually in the form."
-        )
+        discovered_id = cloudflare_api.CloudflareClient.discover_local_account_id()
+        if discovered_id and client.test_account_access(discovered_id):
+            account_id = discovered_id
+            account_name = "Cloudflare Zero Trust Account"
+        else:
+            raise HTTPException(
+                status_code=400, 
+                detail="Could not auto-discover Cloudflare Account. Please provide your Account ID manually in the form."
+            )
 
     site_name = req.site_name or f"Site-{socket.gethostname()}"
 

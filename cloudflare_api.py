@@ -123,6 +123,59 @@ class CloudflareClient:
         result = self._request("GET", "/accounts", token=token, params={"per_page": 50})
         return result if isinstance(result, list) else []
 
+    @classmethod
+    def discover_local_account_id(cls) -> Optional[str]:
+        """
+        Scan local filesystem for an AccountTag / Account ID:
+        1. Environment variable CLOUDFLARE_ACCOUNT_ID
+        2. ~/.cloudflared/*.json credentials files
+        3. ~/.tunnelflare/config.yml credentials-file reference
+        """
+        # 1. Environment
+        env_acc = os.environ.get("CLOUDFLARE_ACCOUNT_ID")
+        if env_acc and env_acc.strip():
+            return env_acc.strip()
+
+        # 2. Check ~/.cloudflared/*.json
+        cloudflared_dir = Path.home() / ".cloudflared"
+        if cloudflared_dir.exists():
+            for json_path in cloudflared_dir.glob("*.json"):
+                try:
+                    with open(json_path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        tag = data.get("AccountTag") or data.get("account_id")
+                        if tag:
+                            return str(tag).strip()
+                except Exception:
+                    continue
+
+        # 3. Check ~/.tunnelflare/config.yml
+        config_file = CONFIG_DIR / "config.yml"
+        if config_file.exists():
+            try:
+                import yaml
+                with open(config_file, "r", encoding="utf-8") as f:
+                    cfg = yaml.safe_load(f) or {}
+                    cred_file = cfg.get("credentials-file")
+                    if cred_file and Path(cred_file).exists():
+                        with open(cred_file, "r", encoding="utf-8") as f:
+                            data = json.load(f)
+                            tag = data.get("AccountTag") or data.get("account_id")
+                            if tag:
+                                return str(tag).strip()
+            except Exception:
+                pass
+
+        return None
+
+    def test_account_access(self, account_id: str, token: Optional[str] = None) -> bool:
+        """Test if the token has access to a specific account's tunnels/routes."""
+        try:
+            res = self._request("GET", f"/accounts/{account_id}/cfd_tunnel", token=token, params={"per_page": 1})
+            return isinstance(res, list)
+        except Exception:
+            return False
+
     def get_user(self, token: Optional[str] = None) -> Dict[str, Any]:
         """Get the Cloudflare user associated with this token."""
         try:

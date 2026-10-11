@@ -294,3 +294,49 @@ def connect_warp() -> bool:
         console.print(f"[red]Failed to connect WARP: {e}[/red]")
         return False
 
+
+def find_competing_tunnel_daemons(tunnel_id: Optional[str] = None) -> List[int]:
+    """
+    Search process table and return PIDs of any stray or competing cloudflared
+    instances running for the given tunnel_id (or all tunnels if None).
+    """
+    pids: List[int] = []
+    current_pid = os.getpid()
+    try:
+        output = subprocess.check_output(["ps", "-eo", "pid,command"], text=True)
+        for line in output.splitlines():
+            line = line.strip()
+            if "cloudflared" in line and "run" in line:
+                parts = line.split(maxsplit=1)
+                if not parts:
+                    continue
+                try:
+                    pid = int(parts[0])
+                except ValueError:
+                    continue
+                if pid == current_pid:
+                    continue
+                if tunnel_id is None or tunnel_id in line:
+                    pids.append(pid)
+    except Exception:
+        pass
+    return pids
+
+
+def terminate_stray_tunnel_daemons(tunnel_id: Optional[str] = None) -> int:
+    """
+    Search process table and terminate any stray or competing cloudflared
+    instances running for the given tunnel_id (or all tunnels if None).
+    Returns count of terminated processes.
+    """
+    import signal
+    count = 0
+    pids = find_competing_tunnel_daemons(tunnel_id)
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGTERM)
+            count += 1
+        except (ProcessLookupError, PermissionError):
+            pass
+    return count
+

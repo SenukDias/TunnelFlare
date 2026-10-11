@@ -103,22 +103,30 @@ def refresh_interface(current_step_index: int):
     console.print(get_header(current_step_index))
     console.print("\n")
 
-def start_tunnel_background(tunnel_id: str, config_path: Path, cred_path: Path, protocol: Optional[str] = None):
+def start_tunnel_background(tunnel_id: str, config_path: Path, cred_path: Path, protocol: Optional[str] = "http2"):
     """
     Starts the tunnel in the background with log preservation and saves the PID.
     """
     TUNNEL_DIR.mkdir(exist_ok=True, mode=0o700)
     
+    # Check for competing instances and warn / prompt
+    competing = utils.find_competing_tunnel_daemons(tunnel_id)
+    if competing:
+        console.print(f"[bold yellow]⚠️ Detected competing cloudflared process(es) (PID: {competing}) for tunnel '{tunnel_id}'.[/bold yellow]")
+        if Confirm.ask("[bold red]Terminate competing instances to prevent edge connection flapping?[/bold red]", default=True):
+            utils.terminate_stray_tunnel_daemons(tunnel_id)
+            time.sleep(0.5)
+
+    effective_proto = protocol or "http2"
     cmd = [
         "cloudflared", 
         "tunnel", 
         "--config", str(config_path), 
         "--cred-file", str(cred_path),
+        "--protocol", effective_proto,
+        "run",
+        tunnel_id,
     ]
-    if protocol:
-        cmd.extend(["--protocol", protocol])
-
-    cmd.extend(["run", tunnel_id])
     
     # Rotate log if file exceeds 25 MB to preserve storage
     if LOG_FILE.exists() and LOG_FILE.stat().st_size > 25 * 1024 * 1024:
@@ -706,12 +714,18 @@ def account_login(
         acc_id = selected_account.get("id")
         acc_name = selected_account.get("name", "Primary Account")
     elif not acc_id:
-        console.print("[yellow]Could not auto-discover Cloudflare Account (Token permissions might be restricted).[/yellow]")
-        acc_id = Prompt.ask("[bold cyan]Please enter your Cloudflare Account ID manually[/bold cyan]")
-        if not acc_id or not acc_id.strip():
-            console.print("[red]Error: Account ID is required.[/red]")
-            raise typer.Exit(1)
-        acc_id = acc_id.strip()
+        discovered_id = cloudflare_api.CloudflareClient.discover_local_account_id()
+        if discovered_id and client.test_account_access(discovered_id):
+            acc_id = discovered_id
+            acc_name = "Cloudflare Zero Trust Account"
+            console.print(f"[green]✓ Auto-discovered local Cloudflare Account ID: {acc_id}[/green]")
+        else:
+            console.print("[yellow]Could not auto-discover Cloudflare Account (Token permissions might be restricted).[/yellow]")
+            acc_id = Prompt.ask("[bold cyan]Please enter your Cloudflare Account ID manually[/bold cyan]")
+            if not acc_id or not acc_id.strip():
+                console.print("[red]Error: Account ID is required.[/red]")
+                raise typer.Exit(1)
+            acc_id = acc_id.strip()
 
     site = site_name or f"Site-{socket.gethostname()}"
 

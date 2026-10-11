@@ -1499,7 +1499,7 @@ class TunnelFlareApp(App):
                 pass
         self.start_tunnel_sync(protocol=protocol)
 
-    def start_tunnel_sync(self, protocol: Optional[str] = None) -> bool:
+    def start_tunnel_sync(self, protocol: Optional[str] = "http2") -> bool:
         if not CONFIG_FILE.exists():
             self.notify("Configuration file not found. Run 'setup' first.", severity="error")
             return False
@@ -1520,15 +1520,22 @@ class TunnelFlareApp(App):
                 return False
 
             TUNNEL_DIR.mkdir(exist_ok=True, mode=0o700)
+            competing = utils.find_competing_tunnel_daemons(tunnel_id)
+            if competing:
+                self.notify(f"Detected & terminated competing cloudflared PID(s) {competing} to prevent edge flapping.", severity="warning")
+                utils.terminate_stray_tunnel_daemons(tunnel_id)
+                time.sleep(0.4)
+
+            effective_proto = protocol or "http2"
             cmd = [
                 "cloudflared",
                 "tunnel",
                 "--config", str(CONFIG_FILE),
                 "--cred-file", str(cred_file),
+                "--protocol", effective_proto,
+                "run",
+                tunnel_id,
             ]
-            if protocol:
-                cmd.extend(["--protocol", protocol])
-            cmd.extend(["run", tunnel_id])
 
             # Rotate raw log file if it exceeds 25 MB
             if LOG_FILE.exists() and LOG_FILE.stat().st_size > 25 * 1024 * 1024:

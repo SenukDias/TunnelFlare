@@ -255,13 +255,13 @@ class HealingEngine:
         self.state = HealthFSMState.HEALING
         self.last_action_time = time.time()
         
-        # Reset to primary protocol (QUIC) on any full mesh reconnect
-        self.active_protocol = "quic"
-        action_msg = f"Initiating edge re-establishment sequence using QUIC (Trigger: {trigger})."
+        # Preserve active protocol (e.g. http2 if downgraded due to UDP blocks)
+        proto = self.active_protocol or "http2"
+        action_msg = f"Initiating edge re-establishment sequence using {proto.upper()} (Trigger: {trigger})."
         success = False
 
         if self.restart_callback:
-            success = self.restart_callback({"protocol": self.active_protocol})
+            success = self.restart_callback({"protocol": proto})
 
         record = HealingActionRecord(
             timestamp=self.last_action_time,
