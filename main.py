@@ -623,13 +623,21 @@ def web(
     if daemon:
         import subprocess
         log_file = TUNNEL_DIR / "web.log"
+        web_pid_file = TUNNEL_DIR / "web.pid"
+        env = {**os.environ, "PYTHONPATH": str(TUNNEL_DIR)}
         with open(log_file, "a") as out:
             proc = subprocess.Popen(
                 [sys.executable, "-m", "uvicorn", "web_server:app", "--host", host, "--port", str(port)],
                 stdout=out,
                 stderr=out,
+                cwd=str(TUNNEL_DIR),
+                env=env,
                 start_new_session=True,
             )
+        try:
+            web_pid_file.write_text(str(proc.pid))
+        except Exception:
+            pass
         console.print(f"[green]Web server running in background (PID: {proc.pid}). Logs: {log_file}[/green]")
     else:
         run_web_server(host=host, port=port)
@@ -644,15 +652,28 @@ def web_stop():
     
     console.print("[bold cyan]Stopping Web Server Daemon...[/bold cyan]")
     try:
-        # Find PIDs matching uvicorn web_server:app
+        killed = 0
+        web_pid_file = TUNNEL_DIR / "web.pid"
+        if web_pid_file.exists():
+            try:
+                pid = int(web_pid_file.read_text().strip())
+                os.kill(pid, signal.SIGTERM)
+                killed += 1
+            except (ProcessLookupError, PermissionError):
+                pass
+            web_pid_file.unlink(missing_ok=True)
+
+        # Fallback: Find any stray PIDs matching uvicorn web_server:app
         cmd = "ps -ef | grep 'uvicorn web_server:app' | grep -v grep | awk '{print $2}'"
         pids = subprocess.check_output(cmd, shell=True, text=True).strip().split('\n')
         
-        killed = 0
         for pid in pids:
             if pid:
-                os.kill(int(pid), 9)
-                killed += 1
+                try:
+                    os.kill(int(pid), signal.SIGTERM)
+                    killed += 1
+                except (ProcessLookupError, PermissionError):
+                    pass
                 
         if killed > 0:
             console.print(f"[green]Successfully stopped {killed} web server process(es).[/green]")

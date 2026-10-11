@@ -242,14 +242,21 @@ echo -e "${ORANGE}======================================================${NC}\n"
 
 # 6. Create Wrapper Script
 echo -e "Creating executable wrapper..."
-cat << 'EOF' > "$INSTALL_DIR/tunnelflare"
+cat << EOF > "$INSTALL_DIR/tunnelflare"
 #!/bin/bash
-INSTALL_DIR="$HOME/.tunnelflare"
-source "$INSTALL_DIR/venv/bin/activate"
-python3 "$INSTALL_DIR/main.py" "$@"
+INSTALL_DIR="${INSTALL_DIR}"
+export PYTHONPATH="\$INSTALL_DIR:\$PYTHONPATH"
+exec "\$INSTALL_DIR/venv/bin/python3" "\$INSTALL_DIR/main.py" "\$@"
 EOF
 
 chmod +x "$INSTALL_DIR/tunnelflare"
+
+# Configure .pth in venv site-packages so all tools/subprocesses find modules
+for site_pkg in "$INSTALL_DIR"/venv/lib/python*/site-packages; do
+    if [ -d "\$site_pkg" ]; then
+        echo "$INSTALL_DIR" > "\$site_pkg/tunnelflare.pth"
+    fi
+done
 
 # 7. Link to PATH
 echo -e "Creating system command 'tunnelflare'..."
