@@ -464,16 +464,19 @@ class TopologyWidget(Static):
             try:
                 with open(CONFIG_FILE, "r") as f:
                     cfg = yaml.safe_load(f)
-                if cfg and "ingress" in cfg:
-                    for rule in cfg["ingress"]:
-                        svc = rule.get("service", "")
-                        if svc.startswith("http"):
-                            try:
-                                requests.get(svc, timeout=0.8, verify=False)
-                                self.local_status = "ok"
-                                break
-                            except Exception:
-                                self.local_status = "error"
+                if cfg:
+                    if cfg.get("warp-routing", {}).get("enabled", False):
+                        self.local_status = "ok"
+                    elif "ingress" in cfg:
+                        for rule in cfg["ingress"]:
+                            svc = rule.get("service", "")
+                            if svc.startswith("http://") or svc.startswith("https://"):
+                                try:
+                                    requests.get(svc, timeout=0.8, verify=False)
+                                    self.local_status = "ok"
+                                    break
+                                except Exception:
+                                    self.local_status = "error"
             except Exception:
                 pass
 
@@ -493,8 +496,12 @@ class TopologyWidget(Static):
                 for line in lines:
                     line_lower = line.lower()
                     
-                    # Ignore old shutdown logs so they don't break the UI on next launch
-                    if any(x in line_lower for x in ["shutting down", "context canceled", "client disconnected", "connection terminated", "connection with edge closed"]):
+                    # Ignore normal shutdown and benign edge rebalancing logs
+                    if any(x in line_lower for x in [
+                        "shutting down", "context canceled", "client disconnected",
+                        "connection terminated", "connection with edge closed",
+                        "already connected to this server"
+                    ]):
                         continue
                         
                     if any(k in line_lower for k in ["err", "error", "failed", "fatal"]):
