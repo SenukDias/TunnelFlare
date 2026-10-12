@@ -15,6 +15,7 @@ import requests
 import yaml
 from typing import Callable, List, Optional
 
+import utils
 from log_parser import LogParser, ParsedLogEvent
 
 TUNNEL_DIR = Path.home() / ".tunnelflare"
@@ -54,6 +55,7 @@ class HealingEngine:
         parser: LogParser,
         restart_callback: Optional[Callable[[dict], bool]] = None,
         notify_callback: Optional[Callable[[str, str], None]] = None,
+        default_protocol: str = "quic",
     ):
         self.parser = parser
         self.restart_callback = restart_callback
@@ -62,7 +64,7 @@ class HealingEngine:
         self.state = HealthFSMState.STOPPED
         self.action_history: List[HealingActionRecord] = []
         self.last_action_time = 0.0
-        self.active_protocol = "quic"
+        self.active_protocol = default_protocol
         self.quic_failure_count = 0
         self.circuit_tripped = False
         self.trip_reason = ""
@@ -316,9 +318,7 @@ class HealingEngine:
                 
                 if tunnel_id:
                     # Sensor A: Ghost Process Detector
-                    cmd = f"pgrep -f 'cloudflared tunnel.*run {tunnel_id}'"
-                    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-                    pids = [p for p in result.stdout.strip().split("\n") if p]
+                    pids = utils.find_competing_tunnel_daemons(tunnel_id)
                     if len(pids) > 1:
                         self._execute_smart_autofix("GHOST_PROCESS_CONFLICT", tunnel_id)
                         continue 
@@ -364,8 +364,8 @@ class HealingEngine:
             self.notify_callback(f"Auto-Heal: {action_msg}", "warning")
             
         try:
-            # 1. Nuclear Termination
-            subprocess.run(f"pkill -9 -f 'cloudflared tunnel.*{tunnel_id}'", shell=True)
+            # 1. Termination of stray daemons
+            utils.terminate_stray_tunnel_daemons(tunnel_id)
             time.sleep(1)
             
             # 2. DNS State Sync
@@ -385,8 +385,8 @@ class HealingEngine:
             # 3. Clean Boot
             success = False
             if self.restart_callback:
-                self.active_protocol = "quic"
-                success = self.restart_callback({"protocol": self.active_protocol})
+                proto = self.active_protocol or "http2"
+                success = self.restart_callback({"protocol": proto})
                 
             record = HealingActionRecord(
                 timestamp=self.last_action_time,

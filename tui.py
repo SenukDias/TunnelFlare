@@ -520,11 +520,6 @@ class TopologyWidget(Static):
         col_edge = CLOUDFLARE_ORANGE if self.tunnel_status == "ok" else (ELECTRIC_AMBER if self.tunnel_status == "stopped" else LASER_RED)
         col_target = ROYAL_PURPLE if self.local_status == "ok" else LASER_RED
 
-        # Helper to render animated kinetic packet pipeline
-        def make_pipeline_link(latency_ms: float, active: bool, warning: bool = False, error: bool = False) -> Text:
-            if not active:
-                return Text(" ──[ OFFLINE ]──▶ ", style="dim #555555", justify="center")
-
         win_w = self.size.width if self.size.width > 0 else 120
         is_compact = win_w < 110
 
@@ -570,8 +565,15 @@ class TopologyWidget(Static):
         is_tun_up = self.tunnel_status == "ok"
         is_target_up = self.local_status == "ok" and is_tun_up
 
+        app = self.app
+        parser: Optional[LogParser] = getattr(self, "custom_parser", getattr(app, "log_parser", None))
+        active_count = parser.get_active_count() if parser else (4 if is_tun_up else 0)
+
+        is_edge_err = (not is_tun_up) or (is_wan_up and active_count == 0)
+        is_edge_warn = (self.log_status in ("warning", "error")) or (active_count < 4)
+
         link_1 = make_pipeline_link(max(1.0, self.ping_rtt_ms * 0.25), is_wan_up)
-        link_2 = make_pipeline_link(self.ping_rtt_ms, is_wan_up and is_tun_up, warning=self.log_status == "warning", error=self.log_status == "error")
+        link_2 = make_pipeline_link(self.ping_rtt_ms, is_wan_up and is_tun_up, warning=is_edge_warn, error=is_edge_err)
         link_3 = make_pipeline_link(max(2.0, self.ping_rtt_ms * 0.35), is_target_up)
 
         # Build Micro-Cards (Auto-scaling based on available terminal width)
@@ -641,9 +643,14 @@ class TopologyWidget(Static):
         top_grid.add_row(card_1, link_1, card_2, link_2, card_3, link_3, card_4)
 
         # Telemetry Summary Strip
-        health_badge = "[bold white on #00E676] OPTIMAL [/]" if (is_tun_up and self.log_status == "ok") else (
-            "[bold black on #FFD600] WARNING [/]" if self.log_status == "warning" else "[bold white on #FF1744] OFFLINE [/]"
-        )
+        if not is_tun_up or (is_wan_up and active_count == 0):
+            health_badge = "[bold white on #FF1744] OFFLINE [/]"
+        elif active_count == 4 and self.log_status == "ok":
+            health_badge = "[bold white on #00E676] OPTIMAL [/]"
+        elif active_count < 4 and active_count > 0:
+            health_badge = "[bold black on #FFD600] DEGRADED [/]"
+        else:
+            health_badge = "[bold black on #FFD600] WARNING [/]"
 
         divider_len = max(20, min(140, win_w - 6))
 
@@ -981,6 +988,7 @@ class TunnelFlareApp(App):
             parser=self.log_parser,
             restart_callback=self.heal_restart_callback,
             notify_callback=lambda msg, sev: self.notify(msg, severity=sev),
+            default_protocol="http2",
         )
 
     def compose(self) -> ComposeResult:
@@ -1541,6 +1549,7 @@ class TunnelFlareApp(App):
                 "--config", str(CONFIG_FILE),
                 "--cred-file", str(cred_file),
                 "--protocol", effective_proto,
+                "--edge-ip-version", "4",
                 "run",
                 tunnel_id,
             ]

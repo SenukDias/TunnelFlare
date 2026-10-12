@@ -124,6 +124,7 @@ def start_tunnel_background(tunnel_id: str, config_path: Path, cred_path: Path, 
         "--config", str(config_path), 
         "--cred-file", str(cred_path),
         "--protocol", effective_proto,
+        "--edge-ip-version", "4",
         "run",
         tunnel_id,
     ]
