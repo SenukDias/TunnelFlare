@@ -465,7 +465,7 @@ class TopologyWidget(Static):
                 with open(CONFIG_FILE, "r") as f:
                     cfg = yaml.safe_load(f)
                 if cfg:
-                    if cfg.get("warp-routing", {}).get("enabled", False):
+                    if "warp-routing" in cfg and cfg.get("warp-routing") is not None:
                         self.local_status = "ok"
                     elif "ingress" in cfg:
                         for rule in cfg["ingress"]:
